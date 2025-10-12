@@ -7,6 +7,7 @@ cd "/Volumes/Extreme SSD/projects/duding-py" || exit
 
 # Activate your virtual environment
 source venv/bin/activate
+export PYTHONUNBUFFERED=1
 
 # Stop any old servers running on port 8000
 if lsof -ti :8000 >/dev/null 2>&1; then
@@ -21,7 +22,7 @@ git pull origin main
 open -a "Visual Studio Code" .
 
 # Start FastAPI server and open browser
-uvicorn app:app --reload &
+uvicorn app:app --reload --reload-dir . --reload-dir templates --reload-dir static &
 sleep 2
 open "http://127.0.0.1:8000/setup"
 wait
