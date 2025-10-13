@@ -34,3 +34,7 @@ Thumbs.db
 # Local files
 .env
 *.sqlite3
+# macOS system junk
+.DS_Store
+.AppleDouble
+._*
