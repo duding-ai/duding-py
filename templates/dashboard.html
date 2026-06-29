@@ -1,10 +1,116 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard{% endblock %}
+{% block title %}Dashboard — Duding{% endblock %}
 
 {% block content %}
-<section class="hero">
-    <h2>Welcome back, Duey👋</h2>
-    <p class="sub">Create.Share.Scale.</p>
-</section>
+<div class="wrap pad">
+
+  <!-- Hero -->
+  <div style="margin-bottom:28px;">
+    <p class="eyebrow">Admin</p>
+    <h1 style="margin:0 0 4px;font-size:26px;font-weight:800;">Welcome back, {{ admin_name }}</h1>
+    <p class="muted" style="margin:0;">Here's your lead activity at a glance.</p>
+  </div>
+
+  <!-- Stat Row -->
+  <div class="admin-stat-row" style="margin-bottom:32px;">
+    <div class="card" style="padding:16px 24px;min-width:120px;">
+      <p class="stat-label">Total Leads</p>
+      <p class="stat-value">{{ total }}</p>
+    </div>
+    <div class="card" style="padding:16px 24px;min-width:120px;">
+      <p class="stat-label">Last 7 Days</p>
+      <p class="stat-value">{{ last7 }}</p>
+    </div>
+    <div class="card" style="padding:16px 24px;min-width:120px;">
+      <p class="stat-label">Unique Emails</p>
+      <p class="stat-value">{{ unique }}</p>
+    </div>
+    <div class="card stat-hot" style="padding:16px 24px;min-width:100px;">
+      <p class="stat-label">Hot</p>
+      <p class="stat-value">{{ hot }}</p>
+    </div>
+    <div class="card stat-warm" style="padding:16px 24px;min-width:100px;">
+      <p class="stat-label">Warm</p>
+      <p class="stat-value">{{ warm }}</p>
+    </div>
+    <div class="card stat-cold" style="padding:16px 24px;min-width:100px;">
+      <p class="stat-label">Cold</p>
+      <p class="stat-value">{{ cold }}</p>
+    </div>
+  </div>
+
+  <!-- Quick links -->
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:32px;">
+    <a class="btn btn-primary" href="/dashboard/leads">View All Leads</a>
+    <a class="btn btn-secondary" href="/dashboard/outreach">Outreach</a>
+    <a class="btn btn-lite" href="/automation">Automation</a>
+    <a class="btn btn-lite" href="/builder">Builder</a>
+  </div>
+
+  <!-- Recent Leads Table -->
+  <div class="card lead-card">
+    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <h2>Recent Leads</h2>
+        <p>Showing the latest {{ leads|length }} lead{% if leads|length != 1 %}s{% endif %}</p>
+      </div>
+      <a class="btn btn-lite" href="/dashboard/leads">All leads &rarr;</a>
+    </div>
+
+    {% if leads %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Business</th>
+            <th>Email</th>
+            <th>Budget</th>
+            <th>Tier</th>
+            <th>Score</th>
+            <th>Status</th>
+            <th>Submitted</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in leads %}
+          <tr onclick="window.location='/dashboard/leads/{{ r.id }}'" style="cursor:pointer;">
+            <td>
+              <a href="/dashboard/leads/{{ r.id }}">{{ r.name or "—" }}</a>
+            </td>
+            <td>{{ r.business or "—" }}</td>
+            <td style="color:#6b7280;">{{ r.email or "—" }}</td>
+            <td>{{ r.budget or "—" }}</td>
+            <td>
+              {% set tier = (r.tier or "cold")|lower %}
+              <span class="status-pill
+                {% if tier == 'hot' %}status-hot{% elif tier == 'warm' %}status-warm{% else %}status-cold{% endif %}"
+                style="{% if tier == 'hot' %}background:#fee2e2;color:#991b1b;{% elif tier == 'warm' %}background:#fef3c7;color:#92400e;{% else %}background:#eff6ff;color:#1d4ed8;{% endif %}">
+                {{ tier }}
+              </span>
+            </td>
+            <td>{{ r.score or 0 }}</td>
+            <td>
+              <span class="status-pill status-{{ (r.status or 'new')|replace(' ', '_') }}">
+                {{ (r.status or "new")|replace("_", " ") }}
+              </span>
+            </td>
+            <td style="color:#9ca3af;">
+              {{ (r.created or "")[:10] or "—" }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div style="padding:48px 24px;text-align:center;">
+      <p class="muted">No leads yet. Share your builder link to start collecting them.</p>
+      <a class="btn btn-primary" href="/builder" style="margin-top:12px;">Go to Builder</a>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
 {% endblock %}

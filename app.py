@@ -113,6 +113,7 @@ print("[DEBUG] ADMIN_PASSWORD length =", len(ADMIN_PASSWORD))
 
 FROM_NAME = os.getenv("FROM_NAME", "Duding.ai")
 ADMIN_NOTIFY_EMAIL = os.getenv("ADMIN_NOTIFY_EMAIL", ADMIN_EMAIL)
+ADMIN_NAME = os.getenv("ADMIN_NAME", ADMIN_EMAIL.split("@")[0].capitalize())
 
 
 # ---------------------------------------------------------------------
@@ -1805,6 +1806,7 @@ async def dashboard(request: Request):
         {
             "request": request,
             "user_id": user_id,
+            "admin_name": ADMIN_NAME,
             "leads": rows,
             "total": total_leads,
             "last7": last_7_days,
