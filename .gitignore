@@ -38,3 +38,14 @@ Thumbs.db
 .DS_Store
 .AppleDouble
 ._*
+
+# local debug/fix scripts
+fix_db.py
+fix_created_dates.py
+init_admin_user.py
+reset_admin_user.py
+debug_*.py
+debug_*.json
+tmp_*.py
+tmp_*.png
+*.log
