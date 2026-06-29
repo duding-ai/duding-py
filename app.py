@@ -448,16 +448,109 @@ def build_outreach_email(profile: dict, target: str) -> Tuple[str, str]:
     return subject, body
 
 
-def _get_outreach_email_for_target(target: str, resolved_url: str) -> str:
-    if not resolved_url:
-        return "info@duding.ai"
+# ── Email priority helpers ────────────────────────────────────────────────────
+
+_GENERIC_LOCAL = frozenset({
+    "info", "contact", "hello", "hi", "support", "sales", "team",
+    "office", "mail", "noreply", "no-reply", "enquiries", "enquiry",
+    "billing", "accounts", "staff", "webmaster", "help", "service",
+    "services", "general", "company", "business", "care", "news",
+    "media", "pr", "marketing", "reservations", "feedback", "jobs",
+    "careers", "hr", "legal", "privacy", "security", "customerservice",
+    "customer", "customercare", "cs", "inquiry", "inquiries",
+})
+_OWNER_LOCAL = frozenset({
+    "owner", "founder", "ceo", "president", "principal", "admin",
+    "director", "manager", "partner",
+})
+_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+
+
+def _email_priority(email: str) -> int:
+    """0=owner/founder, 1=named person, 2=generic. Lower = better."""
+    local = email.split("@")[0].lower()
+    if local in _OWNER_LOCAL:
+        return 0
+    if local in _GENERIC_LOCAL:
+        return 2
+    if re.search(r"[a-zA-Z]", local) and len(local) >= 2:
+        return 1
+    return 2
+
+
+def _extract_domain_emails(html: str, base_domain: str) -> List[str]:
+    """Pull emails that belong to base_domain from an HTML page."""
+    soup = BeautifulSoup(html, "lxml")
+    emails: List[str] = []
+    seen: Set[str] = set()
+
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if href.lower().startswith("mailto:"):
+            raw = href[7:].split("?")[0].strip().lower().rstrip(".")
+            if "@" in raw and base_domain in raw and raw not in seen:
+                seen.add(raw)
+                emails.append(raw)
+
+    for m in _EMAIL_RE.finditer(soup.get_text(" ")):
+        raw = m.group(0).lower().rstrip(".")
+        if base_domain in raw and raw not in seen:
+            seen.add(raw)
+            emails.append(raw)
+
+    return emails
+
+
+def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
+    """
+    Fetch homepage + About/Contact pages and return the best decision-maker email.
+    Returns (email, quality, note) — quality is 'direct' or 'generic'.
+    Priority: owner/founder/ceo > named person (john@co.com) > generic (info@, contact@).
+    """
     try:
-        domain = urlparse(resolved_url).netloc.replace("www.", "")
-        if domain:
-            return f"info@{domain}"
+        parsed = urlparse(url if "://" in url else "https://" + url)
+        domain = parsed.netloc.lower().replace("www.", "")
+        base = f"{parsed.scheme}://{parsed.netloc}"
     except Exception:
-        pass
-    return "info@duding.ai"
+        domain = _prospect_domain(url)
+        base = f"https://{domain}"
+
+    if not domain:
+        return "info@example.com", "generic", "generic email — verify before sending"
+
+    fallback = f"info@{domain}"
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    all_emails: List[str] = []
+
+    for page in [url, f"{base}/about", f"{base}/about-us",
+                 f"{base}/contact", f"{base}/contact-us"]:
+        try:
+            r = requests.get(page, headers={"User-Agent": ua}, timeout=8,
+                             allow_redirects=True)
+            if r.status_code == 200:
+                all_emails.extend(_extract_domain_emails(r.text, domain))
+        except Exception:
+            continue
+
+    if not all_emails:
+        return fallback, "generic", "generic email — verify before sending"
+
+    seen: Set[str] = set()
+    deduped = [e for e in all_emails if not (e in seen or seen.add(e))]
+    deduped.sort(key=_email_priority)
+
+    best = deduped[0]
+    quality = "direct" if _email_priority(best) < 2 else "generic"
+    note = "" if quality == "direct" else "generic email — verify before sending"
+    return best, quality, note
+
+
+def _get_outreach_email_for_target(target: str, resolved_url: str) -> Tuple[str, str, str]:
+    """Returns (email, quality, note). Scrapes About/Contact pages for real owner emails."""
+    url = resolved_url or target
+    if not url:
+        return "info@duding.ai", "generic", "generic email — verify before sending"
+    return _scrape_contact_email(url)
 
 
 def _process_due_followups(db: Session) -> int:
@@ -695,17 +788,20 @@ def _run_find_and_outreach(job_id: str, search_terms: List[str], max_per_term: i
             try:
                 profile = scrape_business_profile(url)
                 resolved_url = profile.get("final_url") or url
-                to_email = _get_outreach_email_for_target(url, resolved_url)
+                to_email, email_quality, email_note = _get_outreach_email_for_target(url, resolved_url)
                 subject, body = build_outreach_email(profile, url)
                 biz_name = _clean_business_name(
                     profile.get("business_name") or profile.get("website_title") or url
                 )
+                is_generic = email_quality == "generic"
 
                 prospect = OutreachProspect(
                     source_input=url,
                     source_url=resolved_url or None,
                     business_name=biz_name or None,
                     email=to_email,
+                    email_quality=email_quality,
+                    email_note=email_note,
                     website=profile.get("final_url") or resolved_url or None,
                     business_description=(
                         profile.get("website_description")
@@ -713,33 +809,36 @@ def _run_find_and_outreach(job_id: str, search_terms: List[str], max_per_term: i
                         or "service business"
                     )[:1000],
                     lever=subject,
-                    status="outreach_pending",
+                    status="pending_review" if is_generic else "outreach_pending",
                     next_follow_up_at=datetime.now(timezone.utc) + timedelta(days=3),
-                    last_contacted_at=datetime.now(timezone.utc),
+                    last_contacted_at=datetime.now(timezone.utc) if not is_generic else None,
                     last_email_subject=subject,
                     last_message=body,
                 )
                 db.add(prospect)
                 db.flush()
 
-                send_email(prospect.email, subject, body)
-
-                for act_type, act_subj, act_preview, act_status in [
-                    ("email_sent", subject, body[:180], "sent"),
-                    ("follow_up_scheduled", "Day 3 follow-up scheduled", "Follow-up scheduled for day 3.", "scheduled"),
-                    ("follow_up_scheduled", "Day 7 follow-up scheduled", "Follow-up scheduled for day 7.", "scheduled"),
-                ]:
-                    db.add(OutreachActivity(
-                        prospect_id=prospect.id,
-                        activity_type=act_type,
-                        subject=act_subj,
-                        body_preview=act_preview,
-                        status=act_status,
-                    ))
-
-                db.commit()
-                job["sent"] += 1
-                job["log"].append(f"✓ {biz_name}  →  {to_email}")
+                if not is_generic:
+                    send_email(prospect.email, subject, body)
+                    for act_type, act_subj, act_preview, act_status in [
+                        ("email_sent", subject, body[:180], "sent"),
+                        ("follow_up_scheduled", "Day 3 follow-up scheduled", "Follow-up scheduled for day 3.", "scheduled"),
+                        ("follow_up_scheduled", "Day 7 follow-up scheduled", "Follow-up scheduled for day 7.", "scheduled"),
+                    ]:
+                        db.add(OutreachActivity(
+                            prospect_id=prospect.id,
+                            activity_type=act_type,
+                            subject=act_subj,
+                            body_preview=act_preview,
+                            status=act_status,
+                        ))
+                    db.commit()
+                    job["sent"] += 1
+                    job["log"].append(f"✓ {biz_name}  →  {to_email}")
+                else:
+                    db.commit()
+                    job["skipped"] += 1
+                    job["log"].append(f"✋ {biz_name}  →  {to_email} [generic — held for review]")
 
             except Exception as exc:
                 db.rollback()
@@ -750,8 +849,8 @@ def _run_find_and_outreach(job_id: str, search_terms: List[str], max_per_term: i
 
         job["status"] = "done"
         job["log"].append(
-            f"Done — {job['sent']} email{'s' if job['sent'] != 1 else ''} sent, "
-            f"{job['skipped']} skipped."
+            f"Done — {job['sent']} sent, "
+            f"{job['skipped']} held/skipped."
         )
 
     except Exception as exc:
@@ -1253,10 +1352,12 @@ async def outreach_preview(request: Request, target: str = "", db: Session = Dep
     profile = scrape_business_profile(target)
     subject, body = build_outreach_email(profile, target)
     resolved_url = profile.get("final_url") or resolve_business_url(target) or None
-    to_email = _get_outreach_email_for_target(target, resolved_url or "")
+    to_email, email_quality, email_note = _get_outreach_email_for_target(target, resolved_url or "")
 
     return JSONResponse({
         "to": to_email,
+        "email_quality": email_quality,
+        "email_note": email_note,
         "subject": subject,
         "body": body,
         "business_name": profile.get("business_name") or profile.get("website_title") or target,
@@ -1312,8 +1413,9 @@ async def run_outreach(
     for target in lines:
         profile = scrape_business_profile(target)
         resolved_url = resolve_business_url(target)
-        to_email = _get_outreach_email_for_target(target, resolved_url)
+        to_email, email_quality, email_note = _get_outreach_email_for_target(target, resolved_url)
         subject, body = build_outreach_email(profile, target)
+        is_generic = email_quality == "generic"
 
         prospect = OutreachProspect(
             source_input=target,
@@ -1324,6 +1426,8 @@ async def run_outreach(
             or None,
             contact_name=None,
             email=to_email,
+            email_quality=email_quality,
+            email_note=email_note,
             website=profile.get("final_url") or resolved_url or None,
             business_description=(
                 profile.get("website_description")
@@ -1331,16 +1435,17 @@ async def run_outreach(
                 or "service business"
             )[:1000],
             lever=subject,
-            status="outreach_pending",
+            status="pending_review" if is_generic else "outreach_pending",
             next_follow_up_at=datetime.now(timezone.utc) + timedelta(days=3),
-            last_contacted_at=datetime.now(timezone.utc),
+            last_contacted_at=datetime.now(timezone.utc) if not is_generic else None,
             last_email_subject=subject,
             last_message=body,
         )
         db.add(prospect)
         db.flush()
 
-        send_email(prospect.email, subject, body)
+        if not is_generic:
+            send_email(prospect.email, subject, body)
 
         db.add(
             OutreachActivity(
@@ -1401,6 +1506,35 @@ async def update_outreach_status(
                 status=status,
             )
         )
+        db.commit()
+
+    return RedirectResponse(url="/dashboard/outreach", status_code=303)
+
+
+@app.post("/dashboard/outreach/{prospect_id}/send")
+async def send_pending_prospect(
+    request: Request,
+    prospect_id: int,
+    db: Session = Depends(get_db),
+):
+    """Send email for a 'pending_review' prospect that was held due to a generic email address."""
+    user_id = require_session(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=303)
+
+    prospect = db.query(OutreachProspect).filter(OutreachProspect.id == prospect_id).first()
+    if prospect and prospect.last_message:
+        send_email(prospect.email, prospect.last_email_subject or "", prospect.last_message)
+        prospect.status = "outreach_pending"
+        prospect.last_contacted_at = datetime.now(timezone.utc)
+        prospect.next_follow_up_at = datetime.now(timezone.utc) + timedelta(days=3)
+        db.add(OutreachActivity(
+            prospect_id=prospect.id,
+            activity_type="email_sent",
+            subject=prospect.last_email_subject or "",
+            body_preview=(prospect.last_message or "")[:180],
+            status="sent",
+        ))
         db.commit()
 
     return RedirectResponse(url="/dashboard/outreach", status_code=303)

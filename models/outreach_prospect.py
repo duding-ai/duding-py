@@ -23,6 +23,8 @@ class OutreachProspect(Base):
     follow_up_count = Column(Integer, nullable=False, default=0, server_default="0")
     last_email_subject = Column(String, nullable=True)
     last_message = Column(Text, nullable=True)
+    email_quality = Column(String, nullable=True)   # 'direct' | 'generic'
+    email_note = Column(String, nullable=True)       # shown in dashboard
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

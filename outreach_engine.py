@@ -533,6 +533,7 @@ def job_send_next_queued() -> None:
         build_outreach_email,
         _clean_business_name,
         _get_outreach_email_for_target,
+        send_email as _app_send_email,
     )
 
     db = SessionLocal()
@@ -554,33 +555,40 @@ def job_send_next_queued() -> None:
 
         profile       = scrape_business_profile(url)
         resolved_url  = profile.get("final_url") or url
-        to_email      = _get_outreach_email_for_target(url, resolved_url)
+        to_email, email_quality, email_note = _get_outreach_email_for_target(url, resolved_url)
         subject, body = build_outreach_email(profile, url)
         biz_name      = _clean_business_name(
             profile.get("business_name") or profile.get("website_title") or url
         )
-        description = profile.get("website_description") or profile.get("industry") or ""
+        description  = profile.get("website_description") or profile.get("industry") or ""
+        is_generic   = email_quality == "generic"
 
         prospect.business_name        = biz_name or prospect.business_name
         prospect.email                = to_email
+        prospect.email_quality        = email_quality
+        prospect.email_note           = email_note
         prospect.website              = profile.get("final_url") or resolved_url or prospect.website
         prospect.business_description = description[:1000]
         prospect.lever                = subject
         prospect.last_email_subject   = subject
         prospect.last_message         = body
-        prospect.last_contacted_at    = datetime.now(timezone.utc)
         prospect.next_follow_up_at    = datetime.now(timezone.utc) + timedelta(days=3)
-        prospect.status               = "outreach_pending"
+        prospect.status               = "pending_review" if is_generic else "outreach_pending"
 
-        db.add(OutreachActivity(
-            prospect_id=prospect.id, activity_type="email_sent",
-            subject=subject, body_preview=body[:180], status="sent",
-        ))
+        if not is_generic:
+            prospect.last_contacted_at = datetime.now(timezone.utc)
+            db.add(OutreachActivity(
+                prospect_id=prospect.id, activity_type="email_sent",
+                subject=subject, body_preview=body[:180], status="sent",
+            ))
         db.commit()
 
-        ok = _send(to_email, subject, body, from_name="Tommy")
-        _state["last_send_at"] = datetime.now(timezone.utc)
-        _log(f"{'✓' if ok else '✗'} {biz_name} → {to_email}")
+        if not is_generic:
+            ok = _send(to_email, subject, body, from_name="Tommy")
+            _state["last_send_at"] = datetime.now(timezone.utc)
+            _log(f"{'✓' if ok else '✗'} {biz_name} → {to_email}")
+        else:
+            _log(f"✋ {biz_name} → {to_email} [generic — held for review]")
 
         # SECTION 8 — Content angle if business mentions years of experience
         years_match = re.search(r"(\d{1,2})\s*\+?\s*years", description, re.IGNORECASE)

@@ -1033,6 +1033,7 @@ body {
 
 /* Outreach-specific status pills */
 .status-queued { background: #f3e8ff; color: #7e22ce; }
+.status-pending_review { background: #fef3c7; color: #92400e; }
 .status-outreach_pending { background: #e0f2fe; color: #0369a1; }
 .status-follow_up_pending { background: #fef9c3; color: #a16207; }
 .status-follow_up_completed { background: #f3f4f6; color: #4b5563; }

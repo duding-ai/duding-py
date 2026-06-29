@@ -22,6 +22,7 @@
     {% set follow_up = prospects | selectattr('status', 'equalto', 'follow_up_pending') | list | length %}
     {% set replied = prospects | selectattr('status', 'equalto', 'replied') | list | length %}
     {% set booked = prospects | selectattr('status', 'equalto', 'booked') | list | length %}
+    {% set review = prospects | selectattr('status', 'equalto', 'pending_review') | list | length %}
 
     <div class="admin-stat-row">
         <article class="admin-stat-card">
@@ -36,6 +37,12 @@
             <p class="stat-label">Follow-up pending</p>
             <p class="stat-value">{{ follow_up }}</p>
         </article>
+        {% if review > 0 %}
+        <article class="admin-stat-card" style="border-color: #f59e0b;">
+            <p class="stat-label" style="color:#92400e;">Needs review</p>
+            <p class="stat-value" style="color:#92400e;">{{ review }}</p>
+        </article>
+        {% endif %}
         <article class="admin-stat-card stat-warm">
             <p class="stat-label">Replied</p>
             <p class="stat-value">{{ replied }}</p>
@@ -178,7 +185,7 @@
                 </thead>
                 <tbody>
                     {% for p in prospects %}
-                    <tr>
+                    <tr {% if p.status == 'pending_review' %}style="background: #fffbeb;"{% endif %}>
                         <td>{{ p.id }}</td>
                         <td>
                             {% if p.website %}
@@ -187,7 +194,12 @@
                             {{ p.business_name or p.source_input or '—' }}
                             {% endif %}
                         </td>
-                        <td>{{ p.email or '—' }}</td>
+                        <td>
+                            {{ p.email or '—' }}
+                            {% if p.email_note %}
+                            <br><span style="font-size:11px; color:#92400e; background:#fef3c7; padding:1px 5px; border-radius:3px;">⚠ {{ p.email_note }}</span>
+                            {% endif %}
+                        </td>
                         <td>
                             <span class="status-pill status-{{ p.status }}">
                                 {{ p.status | replace('_', ' ') }}
@@ -196,19 +208,25 @@
                         <td style="text-align:center;">{{ p.follow_up_count }}/2</td>
                         <td>{{ p.last_contacted_at.strftime('%b %d, %Y') if p.last_contacted_at else '—' }}</td>
                         <td>{{ p.next_follow_up_at.strftime('%b %d, %Y') if p.next_follow_up_at else '—' }}</td>
-                        <td>
+                        <td style="white-space:nowrap;">
                             {% if p.last_message %}
                             <button
                                 class="btn btn-ghost btn-small view-email-btn"
                                 data-prospect-id="{{ p.id }}"
-                                title="View email sent to this prospect"
-                            >View email</button>
+                                title="View email"
+                            >View</button>
+                            {% endif %}
+                            {% if p.status == 'pending_review' and p.last_message %}
+                            <form method="POST" action="/dashboard/outreach/{{ p.id }}/send" style="display:inline;">
+                                <button type="submit" class="btn btn-primary btn-small" title="Send this email anyway">Send</button>
+                            </form>
                             {% endif %}
                         </td>
                         <td>
                             <form method="POST" action="/dashboard/outreach/{{ p.id }}/status" class="inline-status-form">
                                 <select name="status" class="status-select" onchange="this.form.submit()">
                                     <option value="queued" {% if p.status == 'queued' %}selected{% endif %}>Queued</option>
+                                    <option value="pending_review" {% if p.status == 'pending_review' %}selected{% endif %}>Pending review</option>
                                     <option value="outreach_pending" {% if p.status == 'outreach_pending' %}selected{% endif %}>Outreach pending</option>
                                     <option value="follow_up_pending" {% if p.status == 'follow_up_pending' %}selected{% endif %}>Follow-up pending</option>
                                     <option value="follow_up_completed" {% if p.status == 'follow_up_completed' %}selected{% endif %}>Follow-up completed</option>
