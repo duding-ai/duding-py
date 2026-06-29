@@ -10,6 +10,7 @@ from typing import Optional, Set, Tuple, List
 from io import StringIO
 import csv
 import os
+import re
 from urllib.parse import quote, urlparse
 
 import pdfkit
