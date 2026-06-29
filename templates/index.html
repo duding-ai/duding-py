@@ -1,16 +1,269 @@
-<!-- test save -->
-<!DOCTYPE html>
-<html>
+{% extends "base.html" %}
 
-<head>
-    <meta charset="utf-8">
-    <title>Dashboard</title>
-</head>
+{% block title %}Duding — Lead Intake OS for Trade Businesses{% endblock %}
 
-<body>
-    <h1>Welcome to your dashboard, {{ user }}!</h1>
-    <p>You are now logged in.</p>
-    <a href="/auth/login">Log out</a>
-</body>
+{% block head_extra %}
+<link rel="stylesheet" href="/static/landing-fix.css" />
+{% endblock %}
 
-</html>
+{% block content %}
+
+<!-- ═══════════════════════════ HERO ═══════════════════════════ -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+
+      <div class="hero-copy">
+        <p class="kicker">Lead Intake OS · For Trade Businesses</p>
+        <h1 class="headline">Your done-for-you lead machine — installed in days.</h1>
+        <p class="hero-sub">Duding builds a complete lead intake system for plumbers, HVAC, and electricians: custom builder quiz, automated prospect outreach, and professional quote generation.</p>
+
+        <ul class="value-bullets">
+          <li>Qualified leads captured and scored automatically</li>
+          <li>Automated email outreach to decision-makers</li>
+          <li>PDF quotes sent with one click</li>
+          <li>Live in 5–12 business days</li>
+        </ul>
+
+        <div class="hero-actions cta-row">
+          <a class="btn btn-primary btn-wide hero-cta" href="/builder">Start the 60-Second Builder</a>
+          <a class="btn btn-lite hero-cta" href="#apply">Apply for the Build</a>
+        </div>
+
+        <div class="hero-chips" style="margin-top:14px;">
+          <span class="chip">Plumbing</span>
+          <span class="chip">HVAC</span>
+          <span class="chip">Electrical</span>
+          <span class="chip">Roofing</span>
+          <span class="chip">General Contracting</span>
+        </div>
+        <p class="hero-note">No lock-in. No monthly SaaS fee. One install, yours forever.</p>
+      </div>
+
+      <div class="hero-figure">
+        <img class="mascot" src="/static/img/duey-cutout.webp" alt="Duey mascot" />
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ HOW IT WORKS ═══════════════════════════ -->
+<section class="section section-alt">
+  <div class="wrap">
+    <p class="section-kicker">Process</p>
+    <h2 class="section-title">Three steps to a running lead system</h2>
+
+    <div class="three-step-grid">
+
+      <div class="step-card">
+        <span class="step-label">Step 1</span>
+        <h3>Apply &amp; onboard</h3>
+        <p class="section-text-small">Fill out the 60-second builder or apply below. We scope your system and collect your business details.</p>
+      </div>
+
+      <div class="step-card">
+        <span class="step-label">Step 2</span>
+        <h3>We build your OS</h3>
+        <p class="section-text-small">In 5–12 days, your intake quiz, outreach engine, and quote builder are live and configured for your trade.</p>
+      </div>
+
+      <div class="step-card">
+        <span class="step-label">Step 3</span>
+        <h3>Leads flow in</h3>
+        <p class="section-text-small">Prospects are found, emailed, and scored automatically. You get warm leads in your dashboard — just close the job.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ FEATURES ═══════════════════════════ -->
+<section class="section">
+  <div class="wrap">
+    <p class="section-kicker">What's included</p>
+    <h2 class="section-title">Everything a trade business needs to generate and close leads</h2>
+
+    <div class="feature-grid">
+
+      <div class="feature-card">
+        <h3>Lead Intake Builder</h3>
+        <p class="section-text-small">A branded 60-second quiz that captures name, business, budget, and intent — and scores every submission so you know who to call first.</p>
+      </div>
+
+      <div class="feature-card">
+        <h3>Automated Outreach</h3>
+        <p class="section-text-small">The engine searches for plumbers, HVAC contractors, and electricians in your target market and sends personalised cold emails to owner-level contacts.</p>
+      </div>
+
+      <div class="feature-card">
+        <h3>Quote Generator</h3>
+        <p class="section-text-small">Pull up any lead and send a professional branded PDF quote in one click. No templates to manage, no copy-pasting.</p>
+      </div>
+
+      <div class="feature-card">
+        <h3>Follow-Up Sequences</h3>
+        <p class="section-text-small">Automatic follow-up emails go out on schedule. Replies are detected and the lead status updates — no manual tracking.</p>
+      </div>
+
+      <div class="feature-card">
+        <h3>Lead Scoring &amp; Tiers</h3>
+        <p class="section-text-small">Every lead gets a hot / warm / cold score based on budget, role, cadence, and recency. Your hottest leads are always at the top.</p>
+      </div>
+
+      <div class="feature-card">
+        <h3>Your Dashboard</h3>
+        <p class="section-text-small">One clean view of every lead, every quote, and every outreach campaign. No spreadsheets, no duct tape.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ PRICING ═══════════════════════════ -->
+<section class="section section-alt" id="pricing">
+  <div class="wrap">
+    <p class="section-kicker">Pricing</p>
+    <h2 class="section-title">One-time install. No recurring fee.</h2>
+    <p class="section-text">Pick the tier that fits your lead volume. You own the system after it's built.</p>
+
+    <div class="tier-grid">
+
+      <div class="tier-card">
+        <h3>Starter</h3>
+        <p class="tier-price">$2,500 · delivered in 5 days</p>
+        <ul>
+          <li>Lead intake builder</li>
+          <li>Up to 20 leads / month</li>
+          <li>Automated outreach</li>
+          <li>Quote generator</li>
+          <li>Admin dashboard</li>
+        </ul>
+        <div style="margin-top:14px;">
+          <a class="btn btn-lite btn-wide" href="#apply">Apply for Starter</a>
+        </div>
+      </div>
+
+      <div class="tier-card tier-card-highlight">
+        <span class="tier-badge">Most popular</span>
+        <h3>Growth</h3>
+        <p class="tier-price">$4,500 · delivered in 8 days</p>
+        <ul>
+          <li>Everything in Starter</li>
+          <li>Up to 60 leads / month</li>
+          <li>Follow-up email sequences</li>
+          <li>Lead scoring &amp; tier labels</li>
+          <li>Priority support</li>
+        </ul>
+        <div style="margin-top:14px;">
+          <a class="btn btn-primary btn-wide" href="#apply">Apply for Growth</a>
+        </div>
+      </div>
+
+      <div class="tier-card">
+        <h3>Scale</h3>
+        <p class="tier-price">$7,500 · delivered in 12 days</p>
+        <ul>
+          <li>Everything in Growth</li>
+          <li>Unlimited leads</li>
+          <li>Custom outreach targeting</li>
+          <li>Business profile automation</li>
+          <li>White-glove onboarding</li>
+        </ul>
+        <div style="margin-top:14px;">
+          <a class="btn btn-lite btn-wide" href="#apply">Apply for Scale</a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ APPLY FORM ═══════════════════════════ -->
+<section class="lead" id="apply">
+  <div class="wrap">
+
+    {% if thanks %}
+    <div class="banner success">Application received — we'll be in touch within 24 hours.</div>
+    {% elif error %}
+    <div class="banner danger">Something went wrong. Please try again or email us directly.</div>
+    {% endif %}
+
+    <h2 class="lead-title">Apply for the Build</h2>
+    <p class="lead-subtext">Tell us about your business. We'll reach out within 24 hours to scope your system and confirm your slot.</p>
+
+    <form class="lead-form" method="post" action="/lead">
+      <!-- Honeypot -->
+      <div class="honeypot" aria-hidden="true">
+        <input type="text" name="hp_website" tabindex="-1" autocomplete="off" />
+      </div>
+
+      <div class="lead-grid">
+        <div>
+          <label for="lf-name" style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;">Your name *</label>
+          <input class="field" id="lf-name" type="text" name="name" placeholder="Tommy Campos" required />
+        </div>
+        <div>
+          <label for="lf-business" style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;">Business name *</label>
+          <input class="field" id="lf-business" type="text" name="business" placeholder="Campos Plumbing LLC" required />
+        </div>
+        <div>
+          <label for="lf-email" style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;">Email address *</label>
+          <input class="field" id="lf-email" type="email" name="email" placeholder="you@yourco.com" required />
+        </div>
+        <div>
+          <label for="lf-website" style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;">Website or social link</label>
+          <input class="field" id="lf-website" type="url" name="website" placeholder="https://yoursite.com" />
+        </div>
+        <div>
+          <label for="lf-role" style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;">Your role</label>
+          <select class="field" id="lf-role" name="role" style="height:44px;">
+            <option value="">Select…</option>
+            <option value="Owner">Owner</option>
+            <option value="Founder">Founder</option>
+            <option value="CEO">CEO</option>
+            <option value="Marketing Manager">Marketing Manager</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label for="lf-budget" style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;">Marketing budget / month</label>
+          <select class="field" id="lf-budget" name="budget" style="height:44px;">
+            <option value="">Select…</option>
+            <option value="$0–$5k">$0 – $5,000</option>
+            <option value="$5k–$20k">$5,000 – $20,000</option>
+            <option value="$20k–$100k">$20,000 – $100,000</option>
+            <option value="$100k+">$100,000+</option>
+          </select>
+        </div>
+        <div>
+          <label for="lf-cadence" style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;">How often do you post content?</label>
+          <select class="field" id="lf-cadence" name="cadence" style="height:44px;">
+            <option value="">Select…</option>
+            <option value="2–3x per week">2–3x per week</option>
+            <option value="Weekly">Weekly</option>
+            <option value="Less than weekly">Less than weekly</option>
+            <option value="Never">Never</option>
+          </select>
+        </div>
+        <div>
+          <label for="lf-recent" style="display:block;font-size:12px;font-weight:500;margin-bottom:4px;">Last time you ran a marketing campaign?</label>
+          <select class="field" id="lf-recent" name="recent" style="height:44px;">
+            <option value="">Select…</option>
+            <option value="Within 1 week">Within 1 week</option>
+            <option value="Within 2–6 weeks">Within 2–6 weeks</option>
+            <option value="6+ months ago">6+ months ago</option>
+            <option value="Never">Never</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="lead-actions">
+        <button class="btn btn-primary btn-wide" type="submit">Apply for the Build &rarr;</button>
+      </div>
+    </form>
+
+  </div>
+</section>
+
+{% endblock %}
