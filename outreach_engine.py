@@ -18,15 +18,15 @@ import email as email_lib
 import imaplib
 import os
 import re
-import smtplib
 import sqlite3
-import ssl
 import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from email.header import decode_header as _hdr_decode
 from email.utils import parseaddr
 from typing import Any, Deque, Dict, List, Optional, Set
+
+from services.email import send_email as _resend_email
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -121,28 +121,7 @@ def _log(msg: str) -> None:
 
 
 def _send(to_email: str, subject: str, body: str, from_name: str = "Tommy") -> bool:
-    host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    port = int(os.getenv("SMTP_PORT", "587"))
-    user = os.getenv("SMTP_USER", "")
-    pwd  = os.getenv("SMTP_PASSWORD", "")
-    if not user or not pwd:
-        _log("SMTP not configured — skipping send")
-        return False
-    try:
-        raw = (
-            f"From: {from_name} <{user}>\r\n"
-            f"To: {to_email}\r\n"
-            f"Subject: {subject}\r\n\r\n{body}"
-        )
-        ctx = ssl.create_default_context()
-        with smtplib.SMTP(host, port, timeout=20) as s:
-            s.starttls(context=ctx)
-            s.login(user, pwd)
-            s.sendmail(user, [to_email], raw.encode("utf-8"))
-        return True
-    except Exception as exc:
-        _log(f"SMTP error → {to_email}: {exc}")
-        return False
+    return _resend_email(to_email, subject, body, from_name=from_name)
 
 
 def _send_sms(short_msg: str) -> bool:

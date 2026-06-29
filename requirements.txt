@@ -16,7 +16,7 @@ apscheduler==3.11.0
 tzdata==2025.2
 tzlocal==5.3.1
 
-# HTTP / scraping
+# HTTP / scraping (httpx also used for Resend API calls)
 requests==2.32.3
 httpx==0.28.1
 beautifulsoup4==4.13.4

@@ -7,8 +7,6 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sqlite3
-import smtplib
-import ssl
 from typing import Optional, Set, Tuple, List
 from io import StringIO
 import csv
@@ -19,10 +17,12 @@ import pdfkit
 import requests
 import stripe
 from bs4 import BeautifulSoup
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
+
+from services.email import (
+    send_email,
+    send_html_email,
+    send_email_with_attachment,
+)
 
 from fastapi import FastAPI, Request, Form, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import (
@@ -111,10 +111,6 @@ print("[DEBUG] ADMIN_PASSWORD length =", len(ADMIN_PASSWORD))
 # EMAIL SETTINGS
 # ---------------------------------------------------------------------
 
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 FROM_NAME = os.getenv("FROM_NAME", "Duding.ai")
 ADMIN_NOTIFY_EMAIL = os.getenv("ADMIN_NOTIFY_EMAIL", ADMIN_EMAIL)
 
@@ -394,100 +390,8 @@ def parse_created_to_utc(created) -> Optional[datetime]:
 # ---------------------------------------------------------------------
 
 
-def send_email(
-    to_email: str,
-    subject: str,
-    body: str,
-    from_name: str | None = None,
-    from_email: str | None = None,
-) -> None:
-    if not SMTP_USER or not SMTP_PASSWORD:
-        print("[email] SMTP not configured; skipping send.")
-        return
-
-    _from_name = from_name or FROM_NAME
-    _from_email = from_email or SMTP_USER
-
-    msg = (
-        f"From: {_from_name} <{_from_email}>\r\n"
-        f"To: {to_email}\r\n"
-        f"Subject: {subject}\r\n\r\n{body}"
-    )
-
-    try:
-        context = ssl.create_default_context()
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-            server.starttls(context=context)
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_USER, [to_email], msg.encode("utf-8"))
-        print(f"[email] Sent to {to_email}")
-    except Exception as exc:
-        print("[email] Error sending email:", exc)
-
-
-def send_html_email(
-    to_email: str,
-    subject: str,
-    body_text: str,
-    body_html: str,
-) -> None:
-    """Send a multipart/alternative email (HTML + plain-text fallback)."""
-    if not SMTP_USER or not SMTP_PASSWORD:
-        print("[email] SMTP not configured; skipping send_html_email.")
-        return
-
-    msg = MIMEMultipart("alternative")
-    msg["From"] = f"{FROM_NAME} <{SMTP_USER}>"
-    msg["To"] = to_email
-    msg["Subject"] = subject
-
-    msg.attach(MIMEText(body_text, "plain", "utf-8"))
-    msg.attach(MIMEText(body_html, "html", "utf-8"))
-
-    try:
-        context = ssl.create_default_context()
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-            server.starttls(context=context)
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_USER, [to_email], msg.as_string())
-        print(f"[email] HTML email sent to {to_email}")
-    except Exception as exc:
-        print("[email] Error sending HTML email:", exc)
-
-
-def send_email_with_attachment(
-    to_email: str,
-    subject: str,
-    body: str,
-    attachment_bytes: bytes,
-    filename: str,
-) -> None:
-    if not SMTP_USER or not SMTP_PASSWORD:
-        print("[email] SMTP not configured; skipping send_with_attachment.")
-        return
-
-    msg = MIMEMultipart()
-    msg["From"] = f"{FROM_NAME} <{SMTP_USER}>"
-    msg["To"] = to_email
-    msg["Subject"] = subject
-
-    msg.attach(MIMEText(body, "plain"))
-
-    part = MIMEBase("application", "pdf")
-    part.set_payload(attachment_bytes)
-    encoders.encode_base64(part)
-    part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
-    msg.attach(part)
-
-    try:
-        context = ssl.create_default_context()
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-            server.starttls(context=context)
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_USER, [to_email], msg.as_string())
-        print(f"[email] Sent (with attachment) to {to_email}")
-    except Exception as exc:
-        print("[email] Error sending email with attachment:", exc)
+# send_email / send_html_email / send_email_with_attachment are imported from
+# services.email (Resend API) at the top of this file.
 
 
 # ---------------------------------------------------------------------
