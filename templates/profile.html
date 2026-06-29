@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% block title %}Business Profile — Duding{% endblock %}
+{% block content %}
+
+<section class="section">
+    <div class="wrap" style="max-width: 980px;">
+
+        <div style="text-align:center; margin: 24px 0 8px;">
+            <h1 style="margin:0; letter-spacing: 0.08em;">BUSINESS PROFILE</h1>
+            <p style="margin:10px 0 0; color:#666;">
+                Snapshot of this lead’s business, offers, and quick-win opportunities.
+            </p>
+        </div>
+
+        <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin: 18px 0 28px;">
+            <a class="btn" href="/dashboard" style="text-decoration:none;">Back to Dashboard</a>
+            <a class="btn" href="/automation" style="text-decoration:none;">Automation queue</a>
+            {% if profile and profile.lead and profile.lead.id %}
+            <a class="btn btn-primary" href="/quote/{{ profile.lead.id }}" style="text-decoration:none;">Quote sheet</a>
+            {% else %}
+            <a class="btn btn-primary" href="/dashboard" style="text-decoration:none;">Quote sheet</a>
+            {% endif %}
+        </div>
+
+        <!-- Top summary pills -->
+        <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 18px;">
+            <div style="border:1px solid #eee; border-radius:16px; padding:14px 16px;">
+                <div style="font-size:12px; color:#999; letter-spacing:.12em;">LEAD</div>
+                <div style="font-weight:700; margin-top:6px;">
+                    {{ (profile.lead.email if profile and profile.lead and profile.lead.email else "Not provided") }}
+                </div>
+                <div style="margin-top:6px; color:#666; font-size:13px;">
+                    {{ (profile.lead.role if profile and profile.lead and profile.lead.role else "Role not provided") }}
+                </div>
+            </div>
+
+            <div style="border:1px solid #eee; border-radius:16px; padding:14px 16px;">
+                <div style="font-size:12px; color:#999; letter-spacing:.12em;">BUSINESS</div>
+                <div style="font-weight:700; margin-top:6px;">
+                    {{ (profile.business.name if profile and profile.business and profile.business.name else
+                    (profile.lead.business if profile and profile.lead and profile.lead.business else "Not provided"))
+                    }}
+                </div>
+                <div style="margin-top:6px; color:#666; font-size:13px;">
+                    {{ (profile.business.location if profile and profile.business and profile.business.location else
+                    "Location not provided") }}
+                </div>
+            </div>
+
+            <div style="border:1px solid #eee; border-radius:16px; padding:14px 16px;">
+                <div style="font-size:12px; color:#999; letter-spacing:.12em;">WEBSITE</div>
+                <div style="font-weight:700; margin-top:6px; word-break: break-word;">
+                    {% if profile and profile.website %}
+                    <a href="{{ profile.website }}" target="_blank" rel="noopener" style="text-decoration:none;">
+                        {{ profile.website }}
+                    </a>
+                    {% elif profile and profile.lead and profile.lead.website %}
+                    <a href="{{ profile.lead.website }}" target="_blank" rel="noopener" style="text-decoration:none;">
+                        {{ profile.lead.website }}
+                    </a>
+                    {% else %}
+                    Not provided
+                    {% endif %}
+                </div>
+                <div style="margin-top:6px; color:#666; font-size:13px;">
+                    {{ (profile.business.website_title if profile and profile.business and
+                    profile.business.website_title else "") }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Main card -->
+        <div style="border:1px solid #eee; border-radius:18px; padding: 18px; background:#fff;">
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px;">
+
+                <!-- Column 1: Lead basics -->
+                <div style="border:1px solid #f0f0f0; border-radius:16px; padding:16px;">
+                    <h2 style="margin:0 0 8px;">Lead basics</h2>
+                    <p style="margin:0 0 14px; color:#666; font-size:13px;">
+                        High-level context for how this lead operates today.
+                    </p>
+
+                    <div style="font-size:12px; color:#999; letter-spacing:.10em;">EMAIL</div>
+                    <div style="margin:4px 0 12px; font-weight:600;">
+                        {{ (profile.lead.email if profile and profile.lead and profile.lead.email else "Not provided")
+                        }}
+                    </div>
+
+                    <div style="font-size:12px; color:#999; letter-spacing:.10em;">ROLE</div>
+                    <div style="margin:4px 0 12px; font-weight:600;">
+                        {{ (profile.lead.role if profile and profile.lead and profile.lead.role else "Not provided") }}
+                    </div>
+
+                    <div style="font-size:12px; color:#999; letter-spacing:.10em;">BUDGET</div>
+                    <div style="margin:4px 0 12px; font-weight:600;">
+                        {{ (profile.lead.budget if profile and profile.lead and profile.lead.budget else "Not provided")
+                        }}
+                    </div>
+
+                    <div style="font-size:12px; color:#999; letter-spacing:.10em;">CADENCE</div>
+                    <div style="margin:4px 0 12px; font-weight:600;">
+                        {{ (profile.lead.cadence if profile and profile.lead and profile.lead.cadence else "Not
+                        provided") }}
+                    </div>
+
+                    <div style="font-size:12px; color:#999; letter-spacing:.10em;">LAST POSTED</div>
+                    <div style="margin:4px 0 12px; font-weight:600;">
+                        {{ (profile.lead.recent if profile and profile.lead and profile.lead.recent else "Not provided")
+                        }}
+                    </div>
+
+                    <div style="font-size:12px; color:#999; letter-spacing:.10em;">CONTENT LINK</div>
+                    <div style="margin:4px 0 0; font-weight:600; word-break: break-word;">
+                        {% if profile and profile.lead and profile.lead.link %}
+                        <a href="{{ profile.lead.link }}" target="_blank" rel="noopener" style="text-decoration:none;">
+                            {{ profile.lead.link }}
+                        </a>
+                        {% else %}
+                        Not provided
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Column 2: Business scrape / signals -->
+                <div style="border:1px solid #f0f0f0; border-radius:16px; padding:16px;">
+                    <h2 style="margin:0 0 8px;">Business snapshot</h2>
+                    <p style="margin:0 0 14px; color:#666; font-size:13px;">
+                        What we pulled from their website (if provided).
+                    </p>
+
+                    <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+                        <div style="font-size:12px; color:#999; letter-spacing:.10em;">SCRAPED</div>
+                        <div style="font-weight:700;">
+                            {% if profile and profile.scraped %}
+                            YES
+                            {% else %}
+                            NO
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div style="font-size:12px; color:#999; letter-spacing:.10em;">WEBSITE TITLE</div>
+                    <div style="margin:4px 0 12px; font-weight:600;">
+                        {{ (profile.business.website_title if profile and profile.business and
+                        profile.business.website_title else "Not found") }}
+                    </div>
+
+                    <div style="font-size:12px; color:#999; letter-spacing:.10em;">WEBSITE DESCRIPTION</div>
+                    <div style="margin:4px 0 12px; color:#333; line-height:1.35;">
+                        {{ (profile.business.website_description if profile and profile.business and
+                        profile.business.website_description else "Not found") }}
+                    </div>
+
+                    <div style="font-size:12px; color:#999; letter-spacing:.10em;">PHONES FOUND</div>
+                    <div style="margin:6px 0 12px;">
+                        {% set phones = (profile.business.phones_found if profile and profile.business and
+                        profile.business.phones_found else []) %}
+                        {% if phones and phones|length > 0 %}
+                        <ul style="margin:0; padding-left:18px;">
+                            {% for p in phones %}
+                            <li style="margin:4px 0;">{{ p }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <div style="color:#666;">None detected</div>
+                        {% endif %}
+                    </div>
+
+                    <div style="font-size:12px; color:#999; letter-spacing:.10em;">SOCIAL LINKS</div>
+                    <div style="margin-top:6px;">
+                        {% set socials = (profile.business.social_links if profile and profile.business and
+                        profile.business.social_links else []) %}
+                        {% if socials and socials|length > 0 %}
+                        <ul style="margin:0; padding-left:18px;">
+                            {% for s in socials %}
+                            <li style="margin:4px 0; word-break: break-word;">
+                                <a href="{{ s }}" target="_blank" rel="noopener" style="text-decoration:none;">{{ s
+                                    }}</a>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <div style="color:#666;">None detected</div>
+                        {% endif %}
+                    </div>
+
+                    <div style="margin-top:14px; padding-top:12px; border-top:1px solid #f0f0f0;">
+                        <div style="font-size:12px; color:#999; letter-spacing:.10em;">SERVICES FOUND</div>
+                        <div style="margin-top:6px;">
+                            {% set services = (profile.business.services_found if profile and profile.business and
+                            profile.business.services_found else []) %}
+                            {% if services and services|length > 0 %}
+                            <ul style="margin:0; padding-left:18px;">
+                                {% for s in services %}
+                                <li style="margin:4px 0;">{{ s }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <div style="color:#666;">None detected</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Column 3: Levers + quick wins + risks -->
+                <div style="border:1px solid #f0f0f0; border-radius:16px; padding:16px;">
+                    <h2 style="margin:0 0 8px;">Levers</h2>
+                    <p style="margin:0 0 14px; color:#666; font-size:13px;">
+                        What we’d pull first to get traction.
+                    </p>
+
+                    <div style="font-weight:700; margin: 10px 0 6px;">Money levers</div>
+                    {% set money = (profile.money_levers if profile and profile.money_levers else []) %}
+                    {% if money and money|length > 0 %}
+                    <ul style="margin:0 0 12px; padding-left:18px;">
+                        {% for item in money %}
+                        <li style="margin:4px 0;">{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <div style="color:#666; margin-bottom:12px;">None listed</div>
+                    {% endif %}
+
+                    <div style="font-weight:700; margin: 10px 0 6px;">Time levers / systems</div>
+                    {% set time = (profile.time_levers if profile and profile.time_levers else []) %}
+                    {% if time and time|length > 0 %}
+                    <ul style="margin:0 0 12px; padding-left:18px;">
+                        {% for item in time %}
+                        <li style="margin:4px 0;">{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <div style="color:#666; margin-bottom:12px;">None listed</div>
+                    {% endif %}
+
+                    <div style="font-weight:700; margin: 10px 0 6px;">Quick wins (first 30 days)</div>
+                    {% set wins = (profile.quick_wins if profile and profile.quick_wins else []) %}
+                    {% if wins and wins|length > 0 %}
+                    <ul style="margin:0 0 12px; padding-left:18px;">
+                        {% for item in wins %}
+                        <li style="margin:4px 0;">{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <div style="color:#666; margin-bottom:12px;">None listed</div>
+                    {% endif %}
+
+                    <div style="font-weight:700; margin: 10px 0 6px;">Risks / constraints</div>
+                    {% set risks = (profile.risks if profile and profile.risks else []) %}
+                    {% if risks and risks|length > 0 %}
+                    <ul style="margin:0; padding-left:18px;">
+                        {% for item in risks %}
+                        <li style="margin:4px 0;">{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <div style="color:#666;">None listed</div>
+                    {% endif %}
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Debug helper -->
+        <div
+            style="margin-top:16px; padding:12px 14px; border:1px dashed #ddd; border-radius:14px; color:#666; font-size:13px;">
+            <div style="font-weight:700; margin-bottom:6px;">Debug</div>
+
+            {% if profile and profile.lead and profile.lead.id %}
+            <div style="margin-bottom:8px;">
+                Raw JSON link:
+                <a href="/debug/profile/{{ profile.lead.id }}" target="_blank" rel="noopener"
+                    style="text-decoration:none;">
+                    /debug/profile/{{ profile.lead.id }}
+                </a>
+            </div>
+            {% endif %}
+
+            {% if profile_json %}
+            <pre
+                style="white-space: pre-wrap; word-break: break-word; margin: 0; padding: 10px; border: 1px solid #eee; border-radius: 12px; background: #fafafa; color: #333;">{{ profile_json }}</pre>
+            {% else %}
+            <div>Raw JSON: Not available</div>
+            {% endif %}
+        </div>
+
+    </div>
+</section>
+
+{% endblock %}

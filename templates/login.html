@@ -1,19 +1,17 @@
-<!DOCTYPE html>
-<html>
-
-<head>
-    <meta charset="utf-8" />
-    <title>Log In</title>
-</head>
-
-<body>
-    <h1>Log In</h1>
-    <form method="post" action="/auth/login">
-        <label>Username: <input type="text" name="username" required></label><br><br>
-        <label>Password: <input type="password" name="password" required></label><br><br>
-        <button type="submit">Log In</button>
-    </form>
-    <p><a href="/setup">Create an account</a></p>
-</body>
-
-</html>
+{% extends "base.html" %}
+{% block title %}Login — Duding{% endblock %}
+{% block content %}
+<section class="lead">
+    <div class="wrap" style="max-width:720px">
+        {% if error %}<div class="banner danger">Invalid credentials.</div>{% endif %}
+        <h2 class="lead-title">Admin Login</h2>
+        <form method="post" action="/login" class="lead-form">
+            <div class="grid" style="grid-template-columns:1fr; max-width:400px; gap:10px;">
+                <input class="field" name="email" type="email" placeholder="Email" required />
+                <input class="field" type="password" name="password" placeholder="Password" required />
+            </div>
+            <button class="btn btn-primary btn-wide" type="submit" style="max-width:400px; margin-top:4px;">Sign in</button>
+        </form>
+    </div>
+</section>
+{% endblock %}

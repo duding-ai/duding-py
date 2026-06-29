@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Duding — Build Summary{% endblock %}
+
+{% block head_extra %}
+<style>
+    .wrap-narrow {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 48px 20px;
+    }
+
+    .card {
+        border: 1px solid #eee;
+        border-radius: 16px;
+        padding: 18px;
+        background: #fff;
+    }
+
+    h1 {
+        font-size: 40px;
+        line-height: 1.1;
+        margin: 0 0 10px;
+    }
+
+    .muted {
+        color: #666;
+        font-size: 14px;
+    }
+
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-top: 14px;
+    }
+
+    .k {
+        color: #666;
+        font-size: 12px;
+        margin-bottom: 4px;
+    }
+
+    .v {
+        font-weight: 800;
+    }
+
+    .hr {
+        height: 1px;
+        background: #eee;
+        margin: 14px 0;
+    }
+
+    .pill {
+        display: inline-block;
+        padding: 6px 10px;
+        border: 1px solid #eee;
+        border-radius: 999px;
+        font-size: 12px;
+        color: #444;
+        background: #fff;
+    }
+
+    .pill-ok {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+        color: #166534;
+        font-weight: 800;
+    }
+
+    .pill-warn {
+        border-color: #fed7aa;
+        background: #fff7ed;
+        color: #9a3412;
+        font-weight: 800;
+    }
+
+    .cta {
+        margin-top: 16px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .btn {
+        display: inline-block;
+        text-decoration: none;
+    }
+
+    .btn-secondary {
+        background: #111;
+    }
+
+    form {
+        margin: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wrap-narrow">
+    <div class="card">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+            <div>
+                <div class="muted">Build configured</div>
+                <h1>Your Intake OS Summary</h1>
+
+                <div class="muted" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                    <span>Build ID:</span>
+                    <span class="pill">{{ build.build_id }}</span>
+
+                    {% if build.deposit_paid %}
+                    <span class="pill pill-ok">DEPOSIT PAID</span>
+                    {% else %}
+                    <span class="pill pill-warn">DEPOSIT NOT PAID</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <a class="btn btn-primary btn-small" href="/builder">Edit</a>
+        </div>
+
+        <div class="grid">
+            <div>
+                <div class="k">Contact</div>
+                <div class="v">{{ build.contact_name or "—" }}</div>
+
+                <div class="hr"></div>
+
+                <div class="k">Email</div>
+                <div class="v">{{ build.email }}</div>
+
+                <div class="hr"></div>
+
+                <div class="k">Business / brand</div>
+                <div class="v">{{ build.business_name or "—" }}</div>
+
+                <div class="hr"></div>
+
+                <div class="k">Status</div>
+                <div class="v">{{ build.status }}</div>
+            </div>
+
+            <div>
+                <div class="k">Package</div>
+                <div class="v">{{ build.package_tier|upper }}</div>
+
+                <div class="hr"></div>
+
+                <div class="k">Estimated install</div>
+                <div class="v">{{ total }}</div>
+
+                <div class="hr"></div>
+
+                <div class="k">Deposit</div>
+                <div class="v">{{ deposit }}</div>
+
+                <div class="hr"></div>
+
+                <div class="k">Timeline</div>
+                <div class="v">{{ build.timeline_days }} days</div>
+            </div>
+        </div>
+
+        <div class="cta">
+            <a class="btn btn-primary" href="/">Back to homepage</a>
+            <a class="btn btn-secondary btn-small" href="/login">Admin login</a>
+
+            {% if not build.deposit_paid %}
+            <form method="post" action="{{ url_for('builder_deposit_start', build_id=build.build_id) }}">
+                <button class="btn btn-primary" type="submit">Pay $500 deposit via Stripe</button>
+            </form>
+            {% else %}
+            <span class="pill pill-ok" style="padding:10px 16px; font-size:14px;">Deposit paid — build slot reserved</span>
+            {% endif %}
+        </div>
+
+        <p class="muted" style="margin-top:14px;">
+            The $500 deposit reserves your build slot and applies toward your install total.
+            If we determine it's not a fit, it's fully refunded.
+        </p>
+    </div>
+</div>
+{% endblock %}

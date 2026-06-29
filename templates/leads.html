@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}All Leads — Duding{% endblock %}
+
+{% block content %}
+<section class="wrap pad leads-page">
+    <header class="admin-header">
+        <div>
+            <p class="eyebrow">Lead &amp; Client Engine</p>
+            <h1>LEAD &amp; CLIENT ENGINE</h1>
+            <p class="muted">
+                Every lead that’s come through Duding. Click a row to see the full timeline and profile.
+            </p>
+        </div>
+
+        <div class="admin-header-actions">
+            <a href="/dashboard" class="btn btn-secondary">Back to dashboard</a>
+            <a href="/export/csv" class="btn btn-primary">Download CSV</a>
+            <a href="/export/txt" class="btn btn-ghost">Emails .txt</a>
+        </div>
+    </header>
+
+    <div class="leads-meta">
+        <div class="leads-total">
+            <p class="muted">Total leads</p>
+            <p class="stat-value">{{ total }}</p>
+        </div>
+
+        <form method="get" action="/dashboard/leads" class="search-form">
+            <input class="field search-field" type="text" name="q" value="{{ q }}"
+                placeholder="Search name, email, business, or link" />
+            <button class="btn btn-secondary" type="submit">Search</button>
+            {% if q %}
+            <a class="btn btn-ghost" href="/dashboard/leads">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+
+    <section class="card lead-card">
+        <header class="card-header">
+            <h2>All leads</h2>
+        </header>
+
+        <div class="table-wrap">
+            <table class="table table-leads">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Created</th>
+                        <th>Score</th>
+                        <th>Tier</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Business</th>
+                        <th>Budget</th>
+                        <th>Role</th>
+                        <th>Cadence</th>
+                        <th>Recent</th>
+                        <th>Link</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% if leads and leads|length > 0 %}
+                    {% for r in leads %}
+                    <tr class="row-link" data-href="/dashboard/leads/{{ r.id }}">
+                        <td>
+                            <a href="/dashboard/leads/{{ r.id }}">#{{ r.id }}</a>
+                        </td>
+
+                        <td>{{ (r.created_at or "")|string|truncate(10, False, "") }}</td>
+
+                        <td>{{ r.score if r.score is not none else "—" }}</td>
+                        <td>{{ r.tier or "—" }}</td>
+
+                        <td>{{ r.name or "—" }}</td>
+                        <td class="col-email">{{ r.email or "—" }}</td>
+                        <td>{{ r.business or "—" }}</td>
+                        <td>{{ r.budget or "—" }}</td>
+                        <td>{{ r.role or "—" }}</td>
+                        <td>{{ r.cadence or "—" }}</td>
+                        <td>{{ r.recent or "—" }}</td>
+
+                        <td class="clip">
+                            {% if r.link %}
+                            <a href="{{ r.link }}" target="_blank" rel="noopener" onclick="event.stopPropagation();">
+                                {{ r.link }}
+                            </a>
+                            {% else %}
+                            —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="12" class="admin-empty">No leads found.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</section>
+
+<script>
+    // Make entire row clickable (but keep links usable)
+    (function () {
+        const rows = document.querySelectorAll('tr.row-link[data-href]');
+        rows.forEach((row) => {
+            row.style.cursor = 'pointer';
+            row.addEventListener('click', (e) => {
+                // If user clicked an <a> (or inside it), let that behave normally.
+                if (e.target && (e.target.closest && e.target.closest('a'))) return;
+                const href = row.getAttribute('data-href');
+                if (href) window.location.href = href;
+            });
+        });
+    })();
+</script>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{# Admin shell used by dashboard + automation #}
+
+{% block content %}
+<section class="admin-shell">
+    <div class="wrap admin-wrap">
+        {% block admin_content %}{% endblock %}
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Duding — OS Builder</title>
+    <style>
+        body {
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+            background: #fff;
+            color: #111;
+            margin: 0;
+        }
+
+        .wrap {
+            max-width: 980px;
+            margin: 0 auto;
+            padding: 48px 20px;
+        }
+
+        .top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .brand {
+            font-weight: 800;
+            letter-spacing: .02em;
+        }
+
+        .muted {
+            color: #666;
+            font-size: 14px;
+        }
+
+        h1 {
+            font-size: 44px;
+            line-height: 1.05;
+            margin: 18px 0 10px;
+        }
+
+        .card {
+            border: 1px solid #eee;
+            border-radius: 16px;
+            padding: 18px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            color: #444;
+            margin-bottom: 6px;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 12px 12px;
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            font-size: 14px;
+        }
+
+        .row {
+            margin: 12px 0;
+        }
+
+        .pill {
+            display: inline-block;
+            padding: 6px 10px;
+            border: 1px solid #eee;
+            border-radius: 999px;
+            font-size: 12px;
+            color: #444;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #ff4d5a;
+            color: #fff;
+            border: none;
+            border-radius: 999px;
+            padding: 12px 16px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .btn:disabled {
+            opacity: .6;
+            cursor: not-allowed;
+        }
+
+        .summary {
+            background: #fafafa;
+            border: 1px solid #eee;
+            border-radius: 16px;
+            padding: 16px;
+        }
+
+        .k {
+            color: #666;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+
+        .v {
+            font-weight: 800;
+        }
+
+        .hr {
+            height: 1px;
+            background: #eee;
+            margin: 14px 0;
+        }
+
+        .footer {
+            margin-top: 22px;
+            font-size: 12px;
+            color: #777;
+        }
+
+        @media (max-width: 820px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 36px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <div class="top">
+            <div>
+                <div class="brand">duding <span class="muted">operating system installs</span></div>
+                <div class="muted">Fixed packages. $500 deposit. Stripe required.</div>
+            </div>
+            <div class="pill">60-Second OS Builder</div>
+        </div>
+
+        <h1>Configure your Lead Intake OS.</h1>
+        <p class="muted">
+            This is not a custom build. Pick a package. We install the intake infrastructure. You get booked jobs
+            tracked by Stripe.
+        </p>
+
+        <div class="grid">
+            <div class="card">
+                <form method="post" action="/builder" id="builderForm">
+                    <div class="row">
+                        <label>Business type</label>
+                        <select name="business_type" id="business_type" required>
+                            <option value="" selected disabled>Choose one…</option>
+                            <option>Home services</option>
+                            <option>Med spa</option>
+                            <option>Agency</option>
+                            <option>Other service business</option>
+                        </select>
+                    </div>
+
+                    <div class="row">
+                        <label>Lead volume</label>
+                        <select name="lead_volume" id="lead_volume" required>
+                            <option value="" selected disabled>Choose one…</option>
+                            <option value="0-20">0–20 / month</option>
+                            <option value="20-80">20–80 / month</option>
+                            <option value="80+">80+ / month</option>
+                        </select>
+                    </div>
+
+                    <div class="row">
+                        <label>Stripe required</label>
+                        <select name="stripe" id="stripe" required>
+                            <option value="" selected disabled>Choose one…</option>
+                            <option value="yes">Yes, we use Stripe (or will)</option>
+                            <option value="no">No</option>
+                        </select>
+                        <div class="muted" style="margin-top:6px;">
+                            If you select “No”, we won’t take a deposit. Stripe-first at launch.
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <label>Package</label>
+                        <select name="package" id="package" required>
+                            <option value="" selected disabled>Choose one…</option>
+                            <option value="starter">Starter — Intake OS</option>
+                            <option value="growth">Growth — Intake OS</option>
+                            <option value="scale">Scale — Intake OS</option>
+                        </select>
+                    </div>
+
+                    <div class="row">
+                        <label>Work email</label>
+                        <input name="email" id="email" type="email" placeholder="name@company.com" required />
+                    </div>
+
+                    <div class="row">
+                        <button class="btn" type="submit" id="submitBtn" disabled>
+                            Continue to summary
+                        </button>
+                    </div>
+
+                    <div class="footer">
+                        Deposit is applied to the install if accepted. If not accepted, it’s refunded.
+                    </div>
+                </form>
+            </div>
+
+            <div class="summary" id="summary">
+                <div class="k">Estimated install</div>
+                <div class="v" id="sum_pkg">—</div>
+
+                <div class="hr"></div>
+
+                <div class="k">Deposit</div>
+                <div class="v">$500</div>
+
+                <div class="hr"></div>
+
+                <div class="k">Timeline</div>
+                <div class="v" id="sum_time">—</div>
+
+                <div class="hr"></div>
+
+                <div class="k">Notes</div>
+                <div class="muted" id="sum_note">
+                    Stripe required. Fixed scope. No custom integrations.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const pkgEl = document.getElementById("package");
+        const stripeEl = document.getElementById("stripe");
+        const volEl = document.getElementById("lead_volume");
+        const btn = document.getElementById("submitBtn");
+
+        const sumPkg = document.getElementById("sum_pkg");
+        const sumTime = document.getElementById("sum_time");
+        const sumNote = document.getElementById("sum_note");
+
+        function computeTimeline(pkg, vol) {
+            // simple, predictable rules
+            if (!pkg || !vol) return "—";
+            if (pkg === "starter") return vol === "80+" ? "10 business days" : "7 business days";
+            if (pkg === "growth") return vol === "80+" ? "14 business days" : "10 business days";
+            if (pkg === "scale") return vol === "80+" ? "21 business days" : "14 business days";
+            return "—";
+        }
+
+        function refresh() {
+            const pkg = pkgEl.value;
+            const stripe = stripeEl.value;
+            const vol = volEl.value;
+
+            sumPkg.textContent = pkg ? pkg.toUpperCase() : "—";
+            sumTime.textContent = computeTimeline(pkg, vol);
+
+            if (stripe === "no") {
+                sumNote.textContent = "Stripe is required at launch. Select “Yes” to continue.";
+                btn.disabled = true;
+                return;
+            }
+
+            // enable only when required fields chosen
+            btn.disabled = !(pkg && stripe === "yes" && vol);
+            sumNote.textContent = "Stripe required. Fixed scope. No custom integrations.";
+        }
+
+        pkgEl.addEventListener("change", refresh);
+        stripeEl.addEventListener("change", refresh);
+        volEl.addEventListener("change", refresh);
+    </script>
+</body>
+
+</html>

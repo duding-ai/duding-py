@@ -2,30 +2,52 @@
 <html lang="en">
 
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{ brand.name }} — {% block title %}{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/styles.css') }}">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{% block title %}Duding — Create. Share. Scale.{% endblock %}</title>
+
+    {# Global stylesheet is loaded on all pages EXCEPT when quote_mode=True #}
+    {% if not quote_mode %}
+    <link rel="stylesheet" href="/static/css/styles.css?v=4" />
+    {% endif %}
+
+    {# Optional extra head content per page (scripts, print css, etc.) #}
+    {% block head_extra %}{% endblock %}
 </head>
 
-<body>
+<body class="{% if embed_only %}embed-only{% endif %}">
     <header class="site-header">
-        <div class="brand">
-            <h1>{{ brand.name }}</h1>
-            <p class="tagline">{{ brand.tagline }}</p>
+        <div class="wrap nav">
+            <a class="brand" href="/">
+                duding
+                <span class="brand-sub">operating system installs</span>
+            </a>
+
+            <nav class="nav-right">
+                {# Public link #}
+                <a class="link" href="/builder">Builder</a>
+
+                {# Admin-only links #}
+                {% if request.session.get('user_id') %}
+                <a class="link" href="/dashboard">Dashboard</a>
+                <a class="link" href="/dashboard/outreach">Outreach</a>
+                <a class="link" href="/automation">Automation</a>
+                <a class="btn btn-primary btn-small" href="/logout">Logout</a>
+                {% else %}
+                <a class="btn btn-primary btn-small" href="/login">Admin</a>
+                {% endif %}
+            </nav>
         </div>
-        <nav class="nav">
-            <a href="/dashboard">Dashboard</a>
-            <a href="/logout">Logout</a>
-        </nav>
     </header>
 
-    <main class="container">
+    <main>
         {% block content %}{% endblock %}
     </main>
 
     <footer class="site-footer">
-        <small>© {{ brand.name }} 2025</small>
+        <div class="wrap">
+            <small>© Duding — create. share. scale.</small>
+        </div>
     </footer>
 </body>
 

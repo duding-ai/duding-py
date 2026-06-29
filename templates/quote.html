@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Duding.ai — Build Plan</title>
+
+    <link rel="stylesheet" href="/static/css/quote.css" />
+    <link rel="stylesheet" href="/static/css/quote-print.css" media="print" />
+</head>
+
+<body>
+    <div class="quote-shell">
+        <div class="quote-bar">
+            <a class="quote-back" href="https://duding.ai">duding.ai</a>
+            <button class="quote-print-btn" onclick="window.print()">Print / Save PDF</button>
+        </div>
+
+        <main class="quote-page" role="main">
+            <!-- HEADER -->
+            <header class="q-header">
+                <div class="q-brand">
+                    <img class="q-logo" src="/static/img/logo-duding.png" alt="duding" />
+                </div>
+
+                <div class="q-title-row">
+                    <div class="q-title-block">
+                        <h1 class="q-title">Build Plan</h1>
+
+                        <!-- This line MUST feel like infrastructure, not “marketing services.” -->
+                        <p class="q-subtitle">
+                            We install the backend that captures demand, responds fast, routes correctly, and proves
+                            what creates booked jobs.
+                        </p>
+
+                        <p class="q-prepared">
+                            Prepared for:
+                            <span class="q-prepared-name">
+                                {{ (profile.business.website_title or profile.business.name or profile.lead.business or
+                                "Business") }}
+                            </span>
+                        </p>
+
+                        {% if profile.website %}
+                        <p class="q-site">
+                            Site:
+                            <a href="{{ profile.website }}" target="_blank" rel="noopener">{{ profile.website }}</a>
+                        </p>
+                        {% endif %}
+                    </div>
+
+                    <div class="q-badges">
+                        {% if profile.scraped %}
+                        <span class="q-badge q-badge-good">Site scan: COMPLETE</span>
+                        {% else %}
+                        <span class="q-badge q-badge-warn">Site scan: LIMITED</span>
+                        {% endif %}
+
+                        {% set phones = profile.business.phones_found if profile.business and
+                        profile.business.phones_found else [] %}
+                        {% set socials = profile.business.social_links if profile.business and
+                        profile.business.social_links else [] %}
+
+                        {% if phones and phones|length > 0 %}
+                        <span class="q-badge">Phone detected</span>
+                        {% endif %}
+                        {% if socials and socials|length > 0 %}
+                        <span class="q-badge">Social detected</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </header>
+
+            <!-- BODY LAYOUT -->
+            <section class="q-body">
+                <div class="q-left">
+                    <!-- WHAT WE BUILD (not generic—tie to their reality) -->
+                    <section class="q-section">
+                        <h2 class="q-h2">What We Build</h2>
+                        <p class="q-p">
+                            You don’t need “more leads.” You need a system that <strong>captures every lead</strong>,
+                            <strong>responds in under 60 seconds</strong>,
+                            and <strong>tracks exactly what turns into booked work</strong>. That’s the infrastructure
+                            we install.
+                        </p>
+                    </section>
+
+                    <!-- EVIDENCE (scraped) -->
+                    <section class="q-section q-evidence">
+                        <h2 class="q-h2">What We Found (from your site)</h2>
+
+                        {% set title = profile.business.website_title if profile.business else None %}
+                        {% set desc = profile.business.website_description if profile.business else None %}
+                        {% set services = profile.business.services_found if profile.business and
+                        profile.business.services_found else [] %}
+
+                        <ul class="q-bullets">
+                            {% if title %}
+                            <li><strong>Page title:</strong> {{ title }}</li>
+                            {% endif %}
+
+                            {% if desc %}
+                            <li>
+                                <strong>Positioning:</strong>
+                                {{ desc[:220] }}{% if desc|length > 220 %}…{% endif %}
+                            </li>
+                            {% endif %}
+
+                            {% if phones and phones|length > 0 %}
+                            <li><strong>Phone(s) detected:</strong> {{ phones[:2] | join(", ") }}{% if phones|length > 2
+                                %}…{% endif %}</li>
+                            {% else %}
+                            <li><strong>Phone visibility:</strong> Not detected (calls may be leaking).</li>
+                            {% endif %}
+
+                            {% if socials and socials|length > 0 %}
+                            <li><strong>Social link(s) detected:</strong> {{ socials[:2] | join(", ") }}{% if
+                                socials|length > 2 %}…{% endif %}</li>
+                            {% endif %}
+
+                            {% if services and services|length > 0 %}
+                            <li><strong>Services mentioned:</strong> {{ services[:4] | join(", ") }}{% if
+                                services|length > 4 %}…{% endif %}</li>
+                            {% else %}
+                            <li><strong>Services clarity:</strong> Not clearly stated (harder to convert paid traffic).
+                            </li>
+                            {% endif %}
+                        </ul>
+
+                        <p class="q-micro">
+                            This scan is a snapshot — we validate tracking + routing during install.
+                        </p>
+                    </section>
+
+                    <!-- THE INSTALL (core values: infrastructure + proof) -->
+                    <section class="q-section">
+                        <h2 class="q-h2">What We Install First</h2>
+                        <ul class="q-bullets">
+                            <li><strong>Lead capture + attribution:</strong> forms + calls + texts tracked end-to-end
+                                (no more guessing).</li>
+                            <li><strong>Speed-to-lead:</strong> auto-response in &lt;60 seconds + clean follow-up for
+                                non-responders.</li>
+                            <li><strong>Lead routing:</strong> good leads first, junk filtered, missed calls recovered.
+                            </li>
+                            <li><strong>Visibility:</strong> simple scoreboard (leads → booked → closed) so decisions
+                                aren’t vibes.</li>
+                        </ul>
+                    </section>
+
+                    <!-- PRESCRIPTIONS (use generated lists, but keep them tight + non-generic) -->
+                    <div class="q-grid">
+                        <section class="q-card">
+                            <h3 class="q-h3">Money Levers</h3>
+                            <ul class="q-compact">
+                                {% if profile.money_levers and profile.money_levers|length > 0 %}
+                                {% for x in profile.money_levers[:3] %}
+                                <li>{{ x }}</li>
+                                {% endfor %}
+                                {% else %}
+                                <li>Clarify 1–2 primary services into a single “hero offer.”</li>
+                                <li>Track every conversion event (form + calls) so spend ties to revenue.</li>
+                                <li>Align landing page CTA to one action (call or form).</li>
+                                {% endif %}
+                            </ul>
+                        </section>
+
+                        <section class="q-card">
+                            <h3 class="q-h3">Time Levers / Systems</h3>
+                            <ul class="q-compact">
+                                {% if profile.time_levers and profile.time_levers|length > 0 %}
+                                {% for x in profile.time_levers[:3] %}
+                                <li>{{ x }}</li>
+                                {% endfor %}
+                                {% else %}
+                                <li>Missed-call text-back so callers don’t vanish.</li>
+                                <li>Follow-up sequence that stops “lead rot.”</li>
+                                <li>Lead qualification so tire-kickers self-select out.</li>
+                                {% endif %}
+                            </ul>
+                        </section>
+                    </div>
+
+                    <div class="q-grid">
+                        <section class="q-card">
+                            <h3 class="q-h3">Quick Wins (first 30 days)</h3>
+                            <ul class="q-compact">
+                                {% if profile.quick_wins and profile.quick_wins|length > 0 %}
+                                {% for x in profile.quick_wins[:3] %}
+                                <li>{{ x }}</li>
+                                {% endfor %}
+                                {% else %}
+                                {% if phones and phones|length > 0 %}
+                                <li>Make one primary number consistent everywhere (found: {{ phones[0] }}).</li>
+                                {% else %}
+                                <li>Put one primary phone number in header + CTA and track calls.</li>
+                                {% endif %}
+                                <li>Shorten the form (less friction) and track completion rate.</li>
+                                <li>Make CTA one action (call OR form), not both.</li>
+                                {% endif %}
+                            </ul>
+                        </section>
+
+                        <section class="q-card">
+                            <h3 class="q-h3">Risks / Constraints</h3>
+                            <ul class="q-compact">
+                                {% if profile.risks and profile.risks|length > 0 %}
+                                {% for x in profile.risks[:3] %}
+                                <li>{{ x }}</li>
+                                {% endfor %}
+                                {% else %}
+                                <li>If services aren’t crystal clear, ads won’t convert reliably.</li>
+                                <li>If tracking is missing, spend becomes guesswork.</li>
+                                <li>If speed-to-lead is slow, you pay for leads you never talk to.</li>
+                                {% endif %}
+                            </ul>
+                        </section>
+                    </div>
+
+                    <footer class="q-footer">
+                        <div class="q-next">
+                            <strong>Next step:</strong> confirm your service area + your #1 offer. We lock scope and
+                            install the system.
+                        </div>
+                        <div class="q-tagline">Duding.ai — create. share. scale.</div>
+                    </footer>
+                </div>
+
+                <aside class="q-right" aria-label="Duey">
+                    <img class="q-duey" src="/static/img/duey-quote.png" alt="Duey" />
+                </aside>
+            </section>
+        </main>
+    </div>
+</body>
+
+</html>

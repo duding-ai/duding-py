@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Run #{{ run.id }} — Duding{% endblock %}
+
+{% block content %}
+<div class="wrap pad">
+  <h1>Run #{{ run.id }}</h1>
+  <div class="chip-row">
+    <span class="chip">Lead #{{ run.lead_id }}</span>
+    <span class="chip ok">{{ run.status }}</span>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <h3>Timeline</h3>
+    <ul style="margin:0 0 0 20px;">
+      <li><strong>Started:</strong> {{ run.started }}</li>
+      <li><strong>Finished:</strong> {{ run.finished or "—" }}</li>
+    </ul>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <h3>Artifacts</h3>
+    {% if files %}
+    <ul style="margin:0 0 0 20px;">
+      {% for f in files %}
+      <li>{{ f.name }} <span class="muted">({{ f.size }} bytes)</span></li>
+      {% endfor %}
+    </ul>
+    <p class="muted" style="margin-top:8px;">Folder: <code>./artifacts/{{ run.id }}</code></p>
+    {% else %}
+    <p class="muted">No artifact files found for this run.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

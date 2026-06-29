@@ -1,0 +1,547 @@
+{% extends "base.html" %}
+{% block title %}Duding — OS Builder{% endblock %}
+
+{% block content %}
+<style>
+/* ── Layout ───────────────────────────────────────────── */
+.builder-wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 48px 20px 32px;
+}
+
+.builder-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.builder-pill {
+    display: inline-block;
+    padding: 5px 10px;
+    border: 1px solid #eee;
+    border-radius: 999px;
+    font-size: 11px;
+    color: #555;
+    background: #fff;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.builder-h1 {
+    font-size: 44px;
+    line-height: 1.05;
+    margin: 16px 0 8px;
+    font-weight: 900;
+    letter-spacing: -.02em;
+    color: #111;
+}
+
+.builder-muted {
+    color: #666;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* ── Grid ─────────────────────────────────────────────── */
+.builder-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 20px;
+    align-items: start;
+}
+
+/* ── Form card ────────────────────────────────────────── */
+.builder-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 18px;
+    padding: 22px;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(0,0,0,.04);
+}
+
+.builder-row {
+    margin: 14px 0;
+}
+
+.builder-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+
+.builder-input,
+.builder-select {
+    width: 100%;
+    padding: 13px 14px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 12px;
+    font-size: 15px;
+    background: #fff;
+    color: #111;
+    transition: border-color .15s;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.builder-input:focus,
+.builder-select:focus {
+    outline: none;
+    border-color: #111;
+}
+
+/* Custom select arrow */
+.builder-select-wrap {
+    position: relative;
+}
+
+.builder-select-wrap::after {
+    content: '';
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #9ca3af;
+    pointer-events: none;
+}
+
+.builder-select-wrap .builder-select {
+    padding-right: 38px;
+    cursor: pointer;
+}
+
+/* ── CTA button ───────────────────────────────────────── */
+.builder-btn {
+    display: block;
+    width: 100%;
+    background: #ff4d5a;
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 15px 20px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: opacity .15s, transform .12s;
+    letter-spacing: .01em;
+}
+
+.builder-btn:not(:disabled):hover {
+    transform: translateY(-1px);
+    opacity: .92;
+}
+
+.builder-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+.builder-footer {
+    margin-top: 14px;
+    font-size: 12px;
+    color: #9ca3af;
+    text-align: center;
+}
+
+.builder-error {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid #fecdd3;
+    background: #fff1f2;
+    color: #be123c;
+    font-size: 14px;
+}
+
+/* ── Desktop summary panel ────────────────────────────── */
+.builder-summary {
+    background: #fafafa;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 18px;
+    padding: 20px;
+    position: sticky;
+    top: 80px;
+}
+
+.sum-row {
+    padding: 12px 0;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.sum-row:last-child {
+    border-bottom: none;
+}
+
+.k {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: #9ca3af;
+    margin-bottom: 4px;
+}
+
+.v {
+    font-size: 18px;
+    font-weight: 800;
+    color: #111;
+    line-height: 1.2;
+}
+
+.v-muted {
+    font-size: 14px;
+    color: #6b7280;
+    line-height: 1.5;
+    margin-top: 2px;
+}
+
+/* ── Mobile sticky bar ────────────────────────────────── */
+.builder-sticky {
+    display: none; /* shown only on mobile via media query */
+}
+
+/* ── Error ────────────────────────────────────────────── */
+
+/* ── Responsive ───────────────────────────────────────── */
+@media (max-width: 820px) {
+    .builder-wrap {
+        padding: 24px 16px 120px; /* bottom padding for sticky bar */
+    }
+
+    .builder-h1 {
+        font-size: 32px;
+        margin: 12px 0 8px;
+    }
+
+    .builder-grid {
+        grid-template-columns: 1fr;
+        margin-top: 16px;
+    }
+
+    /* Hide desktop summary panel on mobile */
+    .builder-summary {
+        display: none;
+    }
+
+    /* Show sticky bottom bar on mobile */
+    .builder-sticky {
+        display: flex;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: #fff;
+        border-top: 1px solid #e5e7eb;
+        padding: 12px 16px 20px;
+        gap: 12px;
+        align-items: center;
+        box-shadow: 0 -8px 24px rgba(0,0,0,.08);
+    }
+
+    .sticky-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .sticky-pkg {
+        font-size: 13px;
+        font-weight: 700;
+        color: #111;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sticky-sub {
+        font-size: 11px;
+        color: #9ca3af;
+        margin-top: 1px;
+    }
+
+    .sticky-btn {
+        flex-shrink: 0;
+        background: #ff4d5a;
+        color: #fff;
+        border: none;
+        border-radius: 999px;
+        padding: 13px 20px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: opacity .15s;
+        white-space: nowrap;
+    }
+
+    .sticky-btn:disabled {
+        opacity: .4;
+        cursor: not-allowed;
+    }
+
+    /* Hide the desktop submit button on mobile — sticky bar has its own */
+    .builder-btn-row {
+        display: none;
+    }
+
+    /* Larger touch targets on mobile */
+    .builder-input,
+    .builder-select {
+        padding: 15px 14px;
+        font-size: 16px; /* prevents iOS zoom-on-focus */
+        border-radius: 14px;
+    }
+
+    .builder-card {
+        padding: 18px 16px;
+        border-radius: 16px;
+    }
+}
+
+@media (max-width: 400px) {
+    .builder-h1 {
+        font-size: 28px;
+    }
+}
+</style>
+
+<div class="builder-wrap">
+    <div class="builder-top">
+        <div class="builder-muted">Fixed packages. $500 deposit. Stripe required.</div>
+        <div class="builder-pill">60-sec builder</div>
+    </div>
+
+    <h1 class="builder-h1">Configure your Lead Intake OS.</h1>
+    <p class="builder-muted">
+        Pick a package. We install the intake infrastructure.
+        You get booked jobs tracked by Stripe.
+    </p>
+
+    {% if error %}
+    <div class="builder-error">{{ error }}</div>
+    {% endif %}
+
+    <div class="builder-grid">
+        <!-- ── FORM ── -->
+        <div class="builder-card">
+            <form method="post" action="/builder" id="builderForm">
+
+                <div class="builder-row">
+                    <label class="builder-label" for="contact_name">Contact name</label>
+                    <input class="builder-input" name="contact_name" id="contact_name"
+                        type="text" placeholder="Your name" autocomplete="name" required />
+                </div>
+
+                <div class="builder-row">
+                    <label class="builder-label" for="email">Work email</label>
+                    <input class="builder-input" name="email" id="email"
+                        type="email" placeholder="name@company.com" autocomplete="email" required />
+                </div>
+
+                <div class="builder-row">
+                    <label class="builder-label" for="business_name">Business / brand</label>
+                    <input class="builder-input" name="business_name" id="business_name"
+                        type="text" placeholder="Business name" autocomplete="organization" required />
+                </div>
+
+                <div class="builder-row">
+                    <label class="builder-label" for="business_type">Business type</label>
+                    <div class="builder-select-wrap">
+                        <select class="builder-select" name="business_type" id="business_type" required>
+                            <option value="" selected disabled>Choose one…</option>
+                            <option value="home_services">Home services</option>
+                            <option value="med_spa">Med spa</option>
+                            <option value="agency">Agency</option>
+                            <option value="other">Other service business</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="builder-row">
+                    <label class="builder-label" for="lead_volume_tier">Lead volume</label>
+                    <div class="builder-select-wrap">
+                        <select class="builder-select" name="lead_volume_tier" id="lead_volume_tier" required>
+                            <option value="" selected disabled>Choose one…</option>
+                            <option value="0_20">0–20 / month</option>
+                            <option value="21_60">21–60 / month</option>
+                            <option value="61_plus">61+ / month (contact us)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="builder-row">
+                    <label class="builder-label" for="stripe_confirmed">Stripe</label>
+                    <div class="builder-select-wrap">
+                        <select class="builder-select" name="stripe_confirmed" id="stripe_confirmed" required>
+                            <option value="" selected disabled>Choose one…</option>
+                            <option value="yes">Yes, we use Stripe (or will)</option>
+                            <option value="no">No — can't proceed</option>
+                        </select>
+                    </div>
+                    <div class="builder-muted" style="margin-top:6px; font-size:12px;">
+                        Stripe-first at launch. Required for deposit collection.
+                    </div>
+                </div>
+
+                <div class="builder-row">
+                    <label class="builder-label" for="package_tier">Package</label>
+                    <div class="builder-select-wrap">
+                        <select class="builder-select" name="package_tier" id="package_tier" required>
+                            <option value="" selected disabled>Choose one…</option>
+                            <option value="starter">Starter — $2,500</option>
+                            <option value="growth">Growth — $4,500</option>
+                            <option value="scale">Scale — $7,500</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Desktop submit button (hidden on mobile) -->
+                <div class="builder-btn-row builder-row">
+                    <button class="builder-btn" type="submit" id="submitBtn" disabled>
+                        Continue to summary →
+                    </button>
+                </div>
+
+                <div class="builder-footer">
+                    Deposit applied to install if accepted. Refunded if not.
+                </div>
+            </form>
+        </div>
+
+        <!-- ── DESKTOP SUMMARY PANEL ── -->
+        <div class="builder-summary" id="summary">
+            <div class="sum-row">
+                <div class="k">Package</div>
+                <div class="v" id="sum_pkg">—</div>
+            </div>
+            <div class="sum-row">
+                <div class="k">Estimated install</div>
+                <div class="v" id="sum_price">—</div>
+            </div>
+            <div class="sum-row">
+                <div class="k">Deposit</div>
+                <div class="v">$500</div>
+            </div>
+            <div class="sum-row">
+                <div class="k">Timeline</div>
+                <div class="v" id="sum_time">—</div>
+            </div>
+            <div class="sum-row">
+                <div class="k">Notes</div>
+                <div class="v-muted" id="sum_note">
+                    Stripe required. Fixed scope. No custom integrations.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── MOBILE STICKY BAR ── -->
+<div class="builder-sticky" id="stickyBar">
+    <div class="sticky-info">
+        <div class="sticky-pkg" id="sticky_pkg">Select a package to see price</div>
+        <div class="sticky-sub" id="sticky_sub">$500 deposit · Stripe required</div>
+    </div>
+    <button class="sticky-btn" type="submit" form="builderForm" id="stickyBtn" disabled>
+        Continue →
+    </button>
+</div>
+
+<script>
+(function () {
+    const pkgEl    = document.getElementById("package_tier");
+    const stripeEl = document.getElementById("stripe_confirmed");
+    const volEl    = document.getElementById("lead_volume_tier");
+    const nameEl   = document.getElementById("contact_name");
+    const emailEl  = document.getElementById("email");
+    const bizEl    = document.getElementById("business_name");
+    const typeEl   = document.getElementById("business_type");
+
+    const btn       = document.getElementById("submitBtn");
+    const stickyBtn = document.getElementById("stickyBtn");
+
+    const sumPkg   = document.getElementById("sum_pkg");
+    const sumPrice = document.getElementById("sum_price");
+    const sumTime  = document.getElementById("sum_time");
+    const sumNote  = document.getElementById("sum_note");
+    const stickyPkg = document.getElementById("sticky_pkg");
+    const stickySub = document.getElementById("sticky_sub");
+
+    const PRICES = { starter: "$2,500", growth: "$4,500", scale: "$7,500" };
+    const BASE_DAYS = { starter: 5, growth: 8, scale: 12 };
+
+    function computeTimeline(pkg, vol) {
+        if (!pkg || !vol) return "—";
+        const extra = vol === "21_60" ? 2 : 0;
+        return (BASE_DAYS[pkg] + extra) + " business days";
+    }
+
+    function readyBasics() {
+        const nameOk  = (nameEl.value  || "").trim().length > 1;
+        const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test((emailEl.value || "").trim());
+        const bizOk   = (bizEl.value   || "").trim().length > 1;
+        const typeOk  = !!typeEl.value;
+        return nameOk && emailOk && bizOk && typeOk;
+    }
+
+    function refresh() {
+        const pkg    = pkgEl.value;
+        const stripe = stripeEl.value;
+        const vol    = volEl.value;
+
+        const price    = pkg ? (PRICES[pkg] || "—") : "—";
+        const timeline = computeTimeline(pkg, vol);
+
+        // Desktop panel
+        sumPkg.textContent   = pkg ? pkg.toUpperCase() : "—";
+        sumPrice.textContent = price;
+        sumTime.textContent  = timeline;
+
+        if (stripe === "no") {
+            sumNote.textContent = "Stripe is required at launch. Select 'Yes' to continue.";
+            setDisabled(true);
+            updateSticky(pkg, price, timeline, true);
+            return;
+        }
+
+        const canSubmit = readyBasics() && pkg && (stripe === "yes") && vol;
+        setDisabled(!canSubmit);
+        updateSticky(pkg, price, timeline, !canSubmit);
+
+        sumNote.textContent = "Stripe required. Fixed scope. No custom integrations.";
+    }
+
+    function setDisabled(off) {
+        btn.disabled       = off;
+        stickyBtn.disabled = off;
+    }
+
+    function updateSticky(pkg, price, timeline, disabled) {
+        if (pkg && pkg !== "") {
+            stickyPkg.textContent = pkg.toUpperCase() + " · " + price + " · " + timeline;
+        } else {
+            stickyPkg.textContent = "Select a package to see price";
+        }
+        stickySub.textContent = disabled ? "Complete all fields to continue" : "$500 deposit · ready to reserve";
+    }
+
+    [pkgEl, stripeEl, volEl, nameEl, emailEl, bizEl, typeEl].forEach(function(el) {
+        el.addEventListener("change", refresh);
+        el.addEventListener("input",  refresh);
+    });
+
+    refresh();
+})();
+</script>
+{% endblock %}

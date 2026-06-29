@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Lead #{{ lead.id }} — Duding{% endblock %}
+
+{% block content %}
+<section class="wrap pad">
+
+    <header class="lead-head">
+        <p class="eyebrow">Lead timeline</p>
+        <h1>Lead #{{ lead.id }}</h1>
+        <p class="meta">
+            Created {{ (lead.created_at or "")|string|truncate(10, False, "") }} ·
+            {% if lead.email %}{{ lead.email }}{% else %}no email{% endif %}
+        </p>
+
+        <div class="lead-actions">
+            <a href="/dashboard/leads" class="btn-link">Back to leads</a>
+            <a href="/profile/{{ lead.id }}" class="btn-link">Business profile</a>
+            <a href="/quote/{{ lead.id }}" class="btn-link">Quote sheet</a>
+            <a href="/automation" class="btn-link">Automation queue</a>
+        </div>
+
+        <!-- ADMIN-ONLY ACTIONS -->
+        {% if request.session.get('user_id') == 1 %}
+        <div class="lead-actions" style="margin-top: 12px;">
+            <form action="/dashboard/leads/{{ lead.id }}/quote/send" method="post" style="display:inline;">
+                <button class="btn btn-primary btn-small" type="submit">
+                    Generate &amp; Send Quote
+                </button>
+            </form>
+        </div>
+        {% endif %}
+    </header>
+
+    <div class="lead-layout">
+        <section class="lead-details">
+            <h2>Lead details</h2>
+
+            <dl>
+                <div>
+                    <dt>Name</dt>
+                    <dd>{{ lead.name or "—" }}</dd>
+                </div>
+                <div>
+                    <dt>Email</dt>
+                    <dd>{{ lead.email or "—" }}</dd>
+                </div>
+                <div>
+                    <dt>Business</dt>
+                    <dd>{{ lead.business or "—" }}</dd>
+                </div>
+                <div>
+                    <dt>Budget</dt>
+                    <dd>{{ lead.budget or "—" }}</dd>
+                </div>
+                <div>
+                    <dt>Role</dt>
+                    <dd>{{ lead.role or "—" }}</dd>
+                </div>
+                <div>
+                    <dt>Cadence</dt>
+                    <dd>{{ lead.cadence or "—" }}</dd>
+                </div>
+                <div>
+                    <dt>Most recent content</dt>
+                    <dd>{{ lead.recent or "—" }}</dd>
+                </div>
+                <div>
+                    <dt>Link</dt>
+                    <dd>
+                        {% if lead.link %}
+                        <a href="{{ lead.link }}" target="_blank" rel="noopener">{{ lead.link }}</a>
+                        {% else %}
+                        —
+                        {% endif %}
+                    </dd>
+                </div>
+            </dl>
+        </section>
+
+        <section class="lead-timeline">
+            <h2>Timeline</h2>
+
+            {% if events and events|length %}
+            <ul class="timeline">
+                {% for e in events %}
+                <li>
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-body">
+                        <div class="timeline-meta">
+                            <span class="timeline-type">{{ e.event_type }}</span>
+                            <span class="timeline-date">{{ (e.created_at or "")|string|truncate(16, False, "") }}</span>
+                        </div>
+                        {% if e.message %}
+                        <p class="timeline-msg">{{ e.message }}</p>
+                        {% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="muted">No events have been logged for this lead yet.</p>
+            {% endif %}
+        </section>
+    </div>
+
+</section>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Automation Queue — Duding{% endblock %}
+
+{% block content %}
+<section class="wrap pad automation-page">
+    <header class="admin-header">
+        <div>
+            <p class="eyebrow">Automation</p>
+            <h1>AUTOMATION QUEUE</h1>
+            <p class="muted">
+                See which leads have been processed and which still need attention.
+            </p>
+        </div>
+        <div class="admin-header-actions">
+            <a href="/dashboard/leads" class="btn btn-secondary">All leads</a>
+            <a href="/dashboard" class="btn btn-ghost">Back to dashboard</a>
+        </div>
+    </header>
+
+    <section class="card lead-card">
+        <header class="card-header">
+            <div>
+                <h2>Leads &amp; runs</h2>
+                <p class="muted">
+                    Click “Run” to mark a lead as completed and update its status.
+                </p>
+            </div>
+        </header>
+
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Created</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Business</th>
+                        <th>Budget</th>
+                        <th>Status</th>
+                        <th>Runs</th>
+                        <th>Last run</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in leads %}
+                    <tr>
+                        <td><a href="/dashboard/leads/{{ r.id }}">#{{ r.id }}</a></td>
+                        <td>{{ r.created_display }}</td>
+                        <td>{{ r.name or "—" }}</td>
+                        <td>{{ r.email or "—" }}</td>
+                        <td>{{ r.business or "—" }}</td>
+                        <td>{{ r.budget or "—" }}</td>
+                        <td>
+                            <span class="status-pill status-{{ r.status_display }}">
+                                {{ r.status_display }}
+                            </span>
+                        </td>
+                        <td>{{ r.run_count }}</td>
+                        <td>{{ r.last_run_display }}</td>
+                        <td>
+                            <a href="/automation/run?lead_id={{ r.id }}" class="link-run">Run</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</section>
+{% endblock %}

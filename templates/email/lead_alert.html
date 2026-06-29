@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en" style="margin:0;padding:0; background:#f6f7f9;">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>New Duding lead</title>
+    <style>
+        /* Base */
+        .wrapper {
+            background: #f6f7f9;
+            padding: 24px;
+        }
+
+        .container {
+            max-width: 680px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 6px 24px rgba(16, 24, 40, .08);
+        }
+
+        .brandbar {
+            background: #0f1012;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .brandbar img {
+            height: 18px;
+            display: block;
+        }
+
+        .brandbar span {
+            color: #fff;
+            font: 600 14px/1.1 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+            letter-spacing: .2px;
+        }
+
+        .body {
+            padding: 28px 24px 8px;
+            font: 14px/1.6 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+            color: #111827;
+        }
+
+        .h1 {
+            margin: 0 0 4px;
+            font-weight: 800;
+            font-size: 20px;
+            letter-spacing: .2px;
+        }
+
+        .pre {
+            margin: 0 0 14px;
+            color: #6b7280;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #fff1f1;
+            color: #b42318;
+            font-weight: 700;
+            font-size: 12px;
+            border: 1px solid #ffdada;
+        }
+
+        .card {
+            margin: 14px 0 8px;
+            border: 1px solid #eef1f4;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .row {
+            display: flex;
+            padding: 12px 14px;
+            gap: 12px;
+        }
+
+        .row:nth-child(odd) {
+            background: #fafbfc;
+        }
+
+        .k {
+            width: 170px;
+            color: #6b7280;
+        }
+
+        .v {
+            flex: 1;
+            color: #111827;
+            word-break: break-word;
+        }
+
+        .cta {
+            margin: 18px 0 24px;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #ff5a5f;
+            color: #fff !important;
+            text-decoration: none;
+            padding: 12px 18px;
+            border-radius: 10px;
+            font-weight: 800;
+            letter-spacing: .2px;
+        }
+
+        .muted {
+            color: #6b7280;
+        }
+
+        .tiny {
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .footer {
+            padding: 0 24px 24px;
+            color: #6b7280;
+            font: 12px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+        }
+
+        /* Dark mode hint */
+        @media (prefers-color-scheme: dark) {
+            .wrapper {
+                background: #0b0c0e !important;
+            }
+
+            .container {
+                background: #141519 !important;
+                box-shadow: none !important;
+            }
+
+            .body,
+            .v,
+            .k {
+                color: #e5e7eb !important;
+            }
+
+            .row:nth-child(odd) {
+                background: #0f1012 !important;
+            }
+
+            .card {
+                border-color: #1f232b !important;
+            }
+
+            .muted,
+            .tiny {
+                color: #9ba3af !important;
+            }
+        }
+    </style>
+</head>
+
+<body class="wrapper" style="margin:0;">
+    <div class="container">
+        <div class="brandbar">
+            <img src="{{ base_url }}/static/img/logo-duding.png" alt="Duding" />
+            <span>Duding — Lead Desk</span>
+        </div>
+
+        <div class="body">
+            <div class="badge">New lead</div>
+            <h1 class="h1">Inbound lead captured</h1>
+            <p class="pre">Channel: <strong>{{ lead.source|default('landing') }}</strong> • Received <strong>{{
+                    lead.created_at }}</strong></p>
+
+            <div class="card">
+                <div class="row">
+                    <div class="k">Name</div>
+                    <div class="v">{{ lead.name or '—' }}</div>
+                </div>
+                <div class="row">
+                    <div class="k">Email</div>
+                    <div class="v"><a href="mailto:{{ lead.email }}">{{ lead.email }}</a></div>
+                </div>
+                <div class="row">
+                    <div class="k">Business</div>
+                    <div class="v">{{ lead.business or '—' }}</div>
+                </div>
+                <div class="row">
+                    <div class="k">Budget</div>
+                    <div class="v">{{ lead.budget or '—' }}</div>
+                </div>
+                <div class="row">
+                    <div class="k">Role</div>
+                    <div class="v">{{ lead.role or '—' }}</div>
+                </div>
+                <div class="row">
+                    <div class="k">Cadence</div>
+                    <div class="v">{{ lead.cadence or '—' }}</div>
+                </div>
+                <div class="row">
+                    <div class="k">Last posted</div>
+                    <div class="v">{{ lead.recent or '—' }}</div>
+                </div>
+                <div class="row">
+                    <div class="k">Link</div>
+                    <div class="v">{{ lead.link or '—' }}</div>
+                </div>
+                <div class="row">
+                    <div class="k">IP</div>
+                    <div class="v">{{ lead.ip or '—' }}</div>
+                </div>
+            </div>
+
+            <div class="cta">
+                <a class="btn" href="{{ base_url }}/dashboard" target="_blank" rel="noopener">Open dashboard</a>
+                &nbsp;&nbsp;<a class="muted" href="{{ base_url }}/leads.csv" target="_blank" rel="noopener">Download
+                    CSV</a>
+            </div>
+
+            <p class="tiny muted">
+                You’re receiving this because <strong>Duding.ai</strong> captured a new lead on the site.
+                If this was unexpected, rotate your admin password and app password.
+            </p>
+        </div>
+
+        <div class="footer">
+            © Duding 2025 • Sent automatically by Duding Lead Desk
+        </div>
+    </div>
+</body>
+
+</html>

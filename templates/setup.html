@@ -1,18 +1,16 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>Setup – Duding</title>
-</head>
-<body>
-<h1>Setup</h1>
-<form method="post" action="/setup">
-<label for="user">Username:</label>
-<input type="text" id="user" name="user" required />
-<br><br>
-<label for="pass">Password:</label>
-<input type="password" id="pass" name="pass" required />
-<br><br>
-<button type="submit">Finish setup →</button>
+{% extends "base.html" %}
+{% block title %}Setup — {{ brand.name }}{% endblock %}
+{% block content %}
+<h2 class="page-title">Create Admin</h2>
+<form method="post" action="/setup" class="card form" style="max-width:420px;">
+    <div>
+        <div class="label">Username</div>
+        <input class="input" name="username" required />
+    </div>
+    <div>
+        <div class="label">Password</div>
+        <input class="input" name="password" required />
+    </div>
+    <button class="btn-primary">Create</button>
 </form>
-</body>
-</html>
+{% endblock %}

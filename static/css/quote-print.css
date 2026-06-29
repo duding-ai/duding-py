@@ -1,0 +1,221 @@
+/* ============================
+   DUDING BUILD PLAN — PRINT (FIXED)
+   - Forces DESKTOP layout in print (kills mobile @media)
+   - Keeps it looking like the quote
+   - Clamps to 1 page without nuking structure
+   ============================ */
+
+@media print {
+
+    @page {
+        size: A4 portrait;
+        margin: 8mm;
+    }
+
+    html,
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+        color: #0b0b0c !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial !important;
+    }
+
+    /* Hide app chrome */
+    .quote-bar,
+    .site-header,
+    .site-footer,
+    nav,
+    button {
+        display: none !important;
+    }
+
+    /* Remove app shell spacing */
+    .quote-shell {
+        padding: 0 !important;
+        min-height: auto !important;
+        background: #fff !important;
+    }
+
+    /* Print page should look like a clean sheet */
+    .quote-page {
+        max-width: none !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        background: #fff !important;
+    }
+
+    /* ----- IMPORTANT: OVERRIDE MOBILE RULES THAT TRIGGER IN PRINT ----- */
+
+    /* Force title row back to desktop */
+    .q-title-row {
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: flex-start !important;
+        gap: 14px !important;
+    }
+
+    .q-badges {
+        justify-content: flex-end !important;
+    }
+
+    /* Force body back to 2-column desktop grid */
+    .q-body {
+        display: grid !important;
+        grid-template-columns: 1.25fr 0.75fr !important;
+        gap: 10mm !important;
+        align-items: start !important;
+        margin-top: 8px !important;
+    }
+
+    /* Stop responsive re-ordering */
+    .q-right {
+        order: 0 !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: flex-start !important;
+        padding-top: 0 !important;
+    }
+
+    .q-left {
+        order: 0 !important;
+        min-width: 0 !important;
+    }
+
+    /* ----- Tighten typography + spacing (so it stays ONE page) ----- */
+
+    /* global “gentle shrink” — DO NOT overdo */
+    body {
+        zoom: .99 !important;
+    }
+
+    .q-brand {
+        margin-bottom: 6px !important;
+    }
+
+    .q-logo {
+        max-width: 185px !important;
+        height: auto !important;
+    }
+
+    .q-title {
+        font-size: 18px !important;
+        margin: 0 !important;
+    }
+
+    .q-subtitle {
+        font-size: 11px !important;
+        margin: 4px 0 6px !important;
+        line-height: 1.25 !important;
+        max-width: 100% !important;
+    }
+
+    .q-prepared,
+    .q-site {
+        font-size: 11px !important;
+        margin: 2px 0 !important;
+    }
+
+    .q-badge {
+        font-size: 10px !important;
+        padding: 4px 8px !important;
+    }
+
+    .q-section {
+        margin: 6px 0 8px !important;
+        break-inside: avoid !important;
+    }
+
+    .q-h2 {
+        font-size: 12px !important;
+        margin: 0 0 4px !important;
+    }
+
+    .q-p {
+        font-size: 11px !important;
+        line-height: 1.25 !important;
+    }
+
+    .q-micro {
+        font-size: 10px !important;
+        margin-top: 4px !important;
+    }
+
+    .q-evidence,
+    .q-card {
+        border: 1px solid #e6e7ea !important;
+        border-radius: 10px !important;
+        box-shadow: none !important;
+        background: #fff !important;
+        padding: 7px 9px !important;
+        break-inside: avoid !important;
+    }
+
+    .q-bullets {
+        font-size: 11px !important;
+        padding-left: 16px !important;
+        margin: 0 !important;
+    }
+
+    .q-bullets li {
+        margin: 2px 0 !important;
+    }
+
+    .q-grid {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 8px !important;
+        margin-top: 8px !important;
+        break-inside: avoid !important;
+    }
+
+    .q-h3 {
+        font-size: 10px !important;
+        margin: 0 0 6px !important;
+    }
+
+    .q-compact {
+        font-size: 10.8px !important;
+        padding-left: 16px !important;
+        margin: 0 !important;
+    }
+
+    .q-compact li {
+        margin: 2px 0 !important;
+    }
+
+    .q-footer {
+        margin-top: 8px !important;
+        padding-top: 8px !important;
+        border-top: 1px solid #e6e7ea !important;
+        break-inside: avoid !important;
+    }
+
+    .q-next {
+        font-size: 11px !important;
+        line-height: 1.25 !important;
+    }
+
+    .q-tagline {
+        font-size: 10px !important;
+        margin-top: 4px !important;
+        color: #6b7280 !important;
+    }
+
+    /* Duey: keep him contained so he never forces page 2 */
+    .q-duey {
+        max-width: 58mm !important;
+        height: auto !important;
+    }
+
+    /* Don’t print URL after links */
+    a[href]::after {
+        content: "" !important;
+    }
+}

@@ -1,0 +1,528 @@
+{% extends "base.html" %}
+{% block title %}Outreach — Duding{% endblock %}
+
+{% block content %}
+<section class="wrap pad outreach-page">
+
+    <header class="admin-header">
+        <div>
+            <p class="eyebrow">Automation</p>
+            <h1>OUTREACH</h1>
+            <p class="muted">Find real businesses, scrape, personalize, send, and follow up — all automated.</p>
+        </div>
+        <div class="admin-header-actions">
+            <a href="/dashboard" class="btn btn-secondary">Dashboard</a>
+            <a href="/dashboard/leads" class="btn btn-ghost">Leads</a>
+        </div>
+    </header>
+
+    {# ── Stats row ── #}
+    {% set total = prospects | length %}
+    {% set pending = prospects | selectattr('status', 'equalto', 'outreach_pending') | list | length %}
+    {% set follow_up = prospects | selectattr('status', 'equalto', 'follow_up_pending') | list | length %}
+    {% set replied = prospects | selectattr('status', 'equalto', 'replied') | list | length %}
+    {% set booked = prospects | selectattr('status', 'equalto', 'booked') | list | length %}
+
+    <div class="admin-stat-row">
+        <article class="admin-stat-card">
+            <p class="stat-label">Total prospects</p>
+            <p class="stat-value">{{ total }}</p>
+        </article>
+        <article class="admin-stat-card">
+            <p class="stat-label">Outreach pending</p>
+            <p class="stat-value">{{ pending }}</p>
+        </article>
+        <article class="admin-stat-card">
+            <p class="stat-label">Follow-up pending</p>
+            <p class="stat-value">{{ follow_up }}</p>
+        </article>
+        <article class="admin-stat-card stat-warm">
+            <p class="stat-label">Replied</p>
+            <p class="stat-value">{{ replied }}</p>
+        </article>
+        <article class="admin-stat-card stat-hot">
+            <p class="stat-label">Booked</p>
+            <p class="stat-value">{{ booked }}</p>
+        </article>
+    </div>
+
+    {# ── Autonomous engine status ── #}
+    <section class="card engine-card" id="engine-card" style="margin-top: 24px;">
+        <header class="card-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+            <div>
+                <p class="eyebrow" style="margin:0 0 4px;">Autonomous Engine</p>
+                <h2 style="margin:0;">Engine Status</h2>
+                <p class="muted" id="engine-subtitle">Loading…</p>
+            </div>
+            <div style="display:flex; gap:12px; align-items:center;">
+                <div class="engine-stats" id="engine-stats" style="display:flex; gap:20px; font-size:13px; color:var(--muted);">
+                    <span>Sent today <strong id="eng-sent">—</strong> / 50</span>
+                    <span>Queued <strong id="eng-queued">—</strong></span>
+                    <span>Replied <strong id="eng-replied">—</strong></span>
+                    <span>Booked <strong id="eng-booked">—</strong></span>
+                </div>
+                <button class="btn btn-secondary" id="engine-pause-btn" onclick="togglePause()" style="min-width:80px;">Pause</button>
+            </div>
+        </header>
+
+        <div class="engine-schedule" id="engine-schedule" style="display:flex; gap:24px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin: 12px 0 0; padding-top:12px; border-top:1px solid var(--border);">
+            <span>Next find: <strong id="eng-next-find">—</strong></span>
+            <span>Next send: <strong id="eng-next-send">—</strong></span>
+            <span>Next follow-up: <strong id="eng-next-fu">—</strong></span>
+            <span>Next reply check: <strong id="eng-next-reply">—</strong></span>
+            <span>Daily summary: <strong id="eng-next-summary">—</strong></span>
+        </div>
+
+        <div id="engine-log" class="job-log" style="margin-top:12px; max-height:160px;"></div>
+    </section>
+
+    {# ── Find & Outreach (automated finder) ── #}
+    <section class="card outreach-run-card" style="margin-top: 24px; border: 2px solid var(--brand);">
+        <header class="card-header">
+            <div>
+                <p class="eyebrow" style="color: var(--brand); margin:0 0 4px;">New</p>
+                <h2>Find &amp; Outreach</h2>
+                <p class="muted">Type a trade and location — we search DuckDuckGo for real small business websites, filter out directories and franchises, then scrape, personalize, email, and schedule follow-ups automatically.</p>
+            </div>
+        </header>
+        <form method="POST" action="/dashboard/outreach/find" class="outreach-form" id="find-form">
+            <textarea
+                name="search_terms"
+                id="find-terms"
+                class="outreach-textarea"
+                placeholder="plumber USA&#10;HVAC contractor Texas&#10;electrician Chicago IL&#10;roofing contractor USA"
+                rows="4"
+            ></textarea>
+            <div class="outreach-form-footer">
+                <button type="submit" class="btn btn-primary" id="find-btn">Find &amp; outreach →</button>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <label for="max-per-term" style="font-size:13px; color:var(--muted);">Results per term:</label>
+                    <select name="max_per_term" id="max-per-term" class="status-select">
+                        <option value="5">5</option>
+                        <option value="8" selected>8</option>
+                        <option value="12">12</option>
+                    </select>
+                </div>
+                <p class="muted" style="margin:0; font-size:13px;">One search term per line. Duplicates and already-contacted domains are skipped automatically.</p>
+            </div>
+        </form>
+    </section>
+
+    {# ── Job progress panel (shown when a find job is running or just finished) ── #}
+    <section class="card" id="job-progress" style="margin-top: 24px; display: none;">
+        <header class="card-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+            <div>
+                <h2 id="jp-title">Find &amp; Outreach — running</h2>
+                <p class="muted" id="jp-subtitle">Starting up…</p>
+            </div>
+            <div style="display:flex; gap:20px; font-size:13px;">
+                <span>Sent <strong id="jp-sent" style="color:var(--brand);">0</strong></span>
+                <span>Skipped <strong id="jp-skipped">0</strong></span>
+                <span>Done <strong id="jp-processed">0</strong> / <strong id="jp-total">?</strong></span>
+            </div>
+        </header>
+        <div class="progress-bar-outer">
+            <div id="jp-bar" class="progress-bar-inner" style="width:0%"></div>
+        </div>
+        <div id="jp-log" class="job-log"></div>
+    </section>
+
+    {# ── Manual URL entry ── #}
+    <section class="card outreach-run-card" style="margin-top: 24px;">
+        <header class="card-header">
+            <div>
+                <h2>Manual outreach</h2>
+                <p class="muted">Paste specific URLs or search terms directly — one per line.</p>
+            </div>
+        </header>
+        <form method="POST" action="/dashboard/outreach/run" class="outreach-form" id="outreach-run-form">
+            <textarea
+                name="targets"
+                id="outreach-targets"
+                class="outreach-textarea"
+                placeholder="https://smithplumbing.com&#10;https://greenlawnlandscaping.net"
+                rows="4"
+            ></textarea>
+            <div class="outreach-form-footer">
+                <button type="submit" class="btn btn-secondary">Scrape &amp; send →</button>
+                <button type="button" class="btn btn-ghost" id="preview-btn">Preview email</button>
+                <p class="muted" style="margin:0; font-size:13px;">Preview generates the email for the first URL without sending it.</p>
+            </div>
+        </form>
+    </section>
+
+    {# ── Prospects table ── #}
+    <section class="card lead-card" style="margin-top: 24px;">
+        <header class="card-header">
+            <div>
+                <h2>Prospects</h2>
+                <p class="muted">{{ total }} total. Follow-ups fire automatically when due.</p>
+            </div>
+        </header>
+
+        {% if prospects %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Business</th>
+                        <th>Email</th>
+                        <th>Status</th>
+                        <th>Follow-ups</th>
+                        <th>Last contacted</th>
+                        <th>Next follow-up</th>
+                        <th></th>
+                        <th>Update status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in prospects %}
+                    <tr>
+                        <td>{{ p.id }}</td>
+                        <td>
+                            {% if p.website %}
+                            <a href="{{ p.website }}" target="_blank" rel="noopener" class="link-subtle">{{ p.business_name or p.source_input or '—' }}</a>
+                            {% else %}
+                            {{ p.business_name or p.source_input or '—' }}
+                            {% endif %}
+                        </td>
+                        <td>{{ p.email or '—' }}</td>
+                        <td>
+                            <span class="status-pill status-{{ p.status }}">
+                                {{ p.status | replace('_', ' ') }}
+                            </span>
+                        </td>
+                        <td style="text-align:center;">{{ p.follow_up_count }}/2</td>
+                        <td>{{ p.last_contacted_at.strftime('%b %d, %Y') if p.last_contacted_at else '—' }}</td>
+                        <td>{{ p.next_follow_up_at.strftime('%b %d, %Y') if p.next_follow_up_at else '—' }}</td>
+                        <td>
+                            {% if p.last_message %}
+                            <button
+                                class="btn btn-ghost btn-small view-email-btn"
+                                data-prospect-id="{{ p.id }}"
+                                title="View email sent to this prospect"
+                            >View email</button>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form method="POST" action="/dashboard/outreach/{{ p.id }}/status" class="inline-status-form">
+                                <select name="status" class="status-select" onchange="this.form.submit()">
+                                    <option value="queued" {% if p.status == 'queued' %}selected{% endif %}>Queued</option>
+                                    <option value="outreach_pending" {% if p.status == 'outreach_pending' %}selected{% endif %}>Outreach pending</option>
+                                    <option value="follow_up_pending" {% if p.status == 'follow_up_pending' %}selected{% endif %}>Follow-up pending</option>
+                                    <option value="follow_up_completed" {% if p.status == 'follow_up_completed' %}selected{% endif %}>Follow-up completed</option>
+                                    <option value="replied" {% if p.status == 'replied' %}selected{% endif %}>Replied</option>
+                                    <option value="booked" {% if p.status == 'booked' %}selected{% endif %}>Booked</option>
+                                    <option value="not_interested" {% if p.status == 'not_interested' %}selected{% endif %}>Not interested</option>
+                                </select>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>No prospects yet. Use "Find &amp; Outreach" above to kick off your first campaign.</p>
+        </div>
+        {% endif %}
+    </section>
+
+    {# ── Activity feed ── #}
+    <section class="card lead-card" style="margin-top: 24px;">
+        <header class="card-header">
+            <div>
+                <h2>Activity log</h2>
+                <p class="muted">Every email sent, follow-up scheduled, and status change.</p>
+            </div>
+        </header>
+
+        {% if activities %}
+        <div class="table-wrap">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Type</th>
+                        <th>Prospect</th>
+                        <th>Subject / note</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in activities[:50] %}
+                    {% set p = a.prospect %}
+                    <tr>
+                        <td>{{ a.created_at.strftime('%b %d %H:%M') if a.created_at else '—' }}</td>
+                        <td>
+                            <span class="activity-type activity-{{ a.activity_type }}">
+                                {{ a.activity_type | replace('_', ' ') }}
+                            </span>
+                        </td>
+                        <td>{{ p.business_name or p.source_input or '—' if p else '—' }}</td>
+                        <td>{{ a.subject or '—' }}</td>
+                        <td>
+                            <span class="status-pill status-{{ a.status or 'unknown' }}">
+                                {{ a.status or '—' }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>No activity yet.</p>
+        </div>
+        {% endif %}
+    </section>
+
+</section>
+
+{# ── Email preview modal ── #}
+<div id="email-modal" class="email-modal-overlay" aria-hidden="true">
+    <div class="email-modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="email-modal-header">
+            <h3 id="modal-title" class="email-modal-title">Email preview</h3>
+            <button class="email-modal-close" id="modal-close" aria-label="Close">✕</button>
+        </div>
+
+        <div id="modal-loading" class="email-modal-loading">
+            <span class="spinner"></span> Scraping &amp; generating…
+        </div>
+
+        <div id="modal-error" class="email-modal-error" hidden></div>
+
+        <div id="modal-content" hidden>
+            <div class="email-meta">
+                <div class="email-meta-row">
+                    <span class="email-meta-label">To</span>
+                    <span id="modal-to" class="email-meta-value"></span>
+                </div>
+                <div class="email-meta-row">
+                    <span class="email-meta-label">Subject</span>
+                    <span id="modal-subject" class="email-meta-value email-subject-value"></span>
+                </div>
+                <div id="modal-sent-row" class="email-meta-row" hidden>
+                    <span class="email-meta-label">Sent</span>
+                    <span id="modal-sent" class="email-meta-value"></span>
+                </div>
+                <div id="modal-preview-note" class="email-preview-note" hidden>
+                    <span class="status-pill status-outreach_pending">Preview — not sent yet</span>
+                    <span style="margin-left:8px; font-size:13px; color:var(--muted);">Hit "Scrape &amp; send" to actually send.</span>
+                </div>
+            </div>
+            <div class="email-body-wrap">
+                <pre id="modal-body" class="email-body"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+
+    // ── Job progress polling ──────────────────────────────────────────
+    var jobId = "{{ active_job }}";
+    var progressCard = document.getElementById('job-progress');
+
+    if (jobId) {
+        progressCard.style.display = 'block';
+        progressCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        function updateJob(data) {
+            var processed = data.processed || 0;
+            var total     = data.total     || 0;
+            var sent      = data.sent      || 0;
+            var skipped   = data.skipped   || 0;
+            var log       = data.log       || [];
+            var status    = data.status    || 'running';
+
+            document.getElementById('jp-sent').textContent      = sent;
+            document.getElementById('jp-skipped').textContent   = skipped;
+            document.getElementById('jp-processed').textContent = processed;
+            document.getElementById('jp-total').textContent     = total || '?';
+
+            var pct = total > 0 ? Math.min(100, Math.round(processed / total * 100)) : 0;
+            document.getElementById('jp-bar').style.width = pct + '%';
+
+            var logEl = document.getElementById('jp-log');
+            logEl.innerHTML = '';
+            log.forEach(function (line) {
+                var p = document.createElement('p');
+                p.className = 'log-line' +
+                    (line.startsWith('✓') ? ' log-ok'  :
+                     line.startsWith('✗') ? ' log-err' : '');
+                p.textContent = line;
+                logEl.appendChild(p);
+            });
+            logEl.scrollTop = logEl.scrollHeight;
+
+            if (status === 'done') {
+                document.getElementById('jp-title').textContent = 'Find & Outreach — complete';
+                document.getElementById('jp-subtitle').textContent =
+                    sent + ' email' + (sent !== 1 ? 's' : '') + ' sent. Reloading…';
+                setTimeout(function () { window.location.href = '/dashboard/outreach'; }, 2500);
+            } else if (status === 'error') {
+                document.getElementById('jp-title').textContent = 'Find & Outreach — error';
+                document.getElementById('jp-subtitle').textContent = 'Something went wrong. Check the log below.';
+            } else {
+                var terms = (data.terms || []).join(', ');
+                document.getElementById('jp-subtitle').textContent =
+                    'Running: ' + (terms.length > 60 ? terms.slice(0, 57) + '…' : terms);
+            }
+        }
+
+        var pollTimer = setInterval(function () {
+            fetch('/dashboard/outreach/find/status/' + jobId)
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    updateJob(data);
+                    if (data.status !== 'running') clearInterval(pollTimer);
+                })
+                .catch(function () {});
+        }, 2000);
+
+        // immediate first fetch
+        fetch('/dashboard/outreach/find/status/' + jobId)
+            .then(function (r) { return r.json(); })
+            .then(updateJob)
+            .catch(function () {});
+    }
+
+    // ── Email preview modal ───────────────────────────────────────────
+    var overlay  = document.getElementById('email-modal');
+    var loading  = document.getElementById('modal-loading');
+    var errBox   = document.getElementById('modal-error');
+    var content  = document.getElementById('modal-content');
+    var sentRow  = document.getElementById('modal-sent-row');
+    var prevNote = document.getElementById('modal-preview-note');
+
+    function openModal() {
+        overlay.setAttribute('aria-hidden', 'false');
+        overlay.classList.add('is-open');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeModal() {
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.classList.remove('is-open');
+        document.body.style.overflow = '';
+    }
+    function showLoading(title) {
+        document.getElementById('modal-title').textContent = title || 'Email preview';
+        loading.hidden = false; errBox.hidden = true; content.hidden = true;
+        openModal();
+    }
+    function showError(msg) {
+        loading.hidden = true; content.hidden = true;
+        errBox.hidden = false; errBox.textContent = msg;
+    }
+    function showEmail(data, isPreview) {
+        loading.hidden = true; errBox.hidden = true; content.hidden = false;
+        document.getElementById('modal-to').textContent      = data.to      || '—';
+        document.getElementById('modal-subject').textContent = data.subject || '—';
+        document.getElementById('modal-body').textContent    = data.body    || '';
+        if (isPreview) {
+            sentRow.hidden = true; prevNote.hidden = false;
+        } else {
+            prevNote.hidden = true;
+            if (data.sent_at) {
+                document.getElementById('modal-sent').textContent = data.sent_at;
+                sentRow.hidden = false;
+            } else { sentRow.hidden = true; }
+        }
+    }
+
+    document.querySelectorAll('.view-email-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            showLoading('Email sent to this prospect');
+            fetch('/dashboard/outreach/' + btn.dataset.prospectId + '/email')
+                .then(function (r) { return r.json(); })
+                .then(function (d) { if (d.error) showError(d.error); else showEmail(d, false); })
+                .catch(function () { showError('Failed to load email.'); });
+        });
+    });
+
+    document.getElementById('preview-btn').addEventListener('click', function () {
+        var first = (document.getElementById('outreach-targets').value || '')
+            .split('\n').map(function (l) { return l.trim(); }).find(function (l) { return l; });
+        if (!first) { alert('Enter a URL in the manual box first.'); return; }
+        showLoading('Generating preview…');
+        fetch('/dashboard/outreach/preview?target=' + encodeURIComponent(first))
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.error) { showError(d.error); return; }
+                document.getElementById('modal-title').textContent = 'Preview — ' + (d.business_name || first);
+                showEmail(d, true);
+            })
+            .catch(function () { showError('Scrape failed. Check the URL and try again.'); });
+    });
+
+    document.getElementById('modal-close').addEventListener('click', closeModal);
+    overlay.addEventListener('click', function (e) { if (e.target === overlay) closeModal(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
+
+})();
+
+// ── Autonomous engine status card ─────────────────────────────────────────
+(function () {
+    var pauseBtn = document.getElementById('engine-pause-btn');
+
+    function renderEngine(d) {
+        var running = d.running;
+        var paused  = d.paused;
+
+        var statusText = !running ? 'Stopped' : paused ? 'Paused' : 'Running — finds every 4h, emails every 20min';
+        document.getElementById('engine-subtitle').textContent = statusText;
+        pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+        pauseBtn.className   = 'btn ' + (paused ? 'btn-primary' : 'btn-secondary');
+
+        document.getElementById('eng-sent').textContent    = d.today_sent || 0;
+        document.getElementById('eng-queued').textContent  = (d.counts && d.counts.queued)   || 0;
+        document.getElementById('eng-replied').textContent = (d.counts && d.counts.replied)  || 0;
+        document.getElementById('eng-booked').textContent  = (d.counts && d.counts.booked)   || 0;
+
+        var nr = d.next_runs || {};
+        document.getElementById('eng-next-find').textContent    = nr['find_prospects'] || '—';
+        document.getElementById('eng-next-send').textContent    = nr['send_queued']    || '—';
+        document.getElementById('eng-next-fu').textContent      = nr['process_followups'] || '—';
+        document.getElementById('eng-next-reply').textContent   = nr['check_replies']  || '—';
+        document.getElementById('eng-next-summary').textContent = nr['daily_summary']  || '—';
+
+        var log   = d.log || [];
+        var logEl = document.getElementById('engine-log');
+        logEl.innerHTML = '';
+        log.slice(-20).forEach(function (line) {
+            var p = document.createElement('p');
+            p.className = 'log-line' +
+                (line.indexOf('✓') >= 0 ? ' log-ok'  :
+                 line.indexOf('✗') >= 0 ? ' log-err' :
+                 line.indexOf('ERROR') >= 0 ? ' log-err' : '');
+            p.textContent = line;
+            logEl.appendChild(p);
+        });
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function pollEngine() {
+        fetch('/dashboard/outreach/engine/status')
+            .then(function (r) { return r.json(); })
+            .then(renderEngine)
+            .catch(function () {});
+    }
+
+    window.togglePause = function () {
+        fetch('/dashboard/outreach/engine/pause', { method: 'POST' })
+            .then(function (r) { return r.json(); })
+            .then(renderEngine)
+            .catch(function () {});
+    };
+
+    pollEngine();
+    setInterval(pollEngine, 15000);
+})();
+</script>
+{% endblock %}
