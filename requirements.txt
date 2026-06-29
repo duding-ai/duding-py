@@ -10,6 +10,7 @@ starlette==0.48.0
 sqlalchemy==2.0.41
 alembic==1.14.1
 greenlet==3.2.3
+psycopg2-binary==2.9.10
 
 # Scheduling
 apscheduler==3.11.0

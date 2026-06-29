@@ -9,7 +9,7 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.sqlite import JSON
+from sqlalchemy import JSON
 
 from db import Base
 

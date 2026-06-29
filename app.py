@@ -6,7 +6,6 @@ import uuid
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import sqlite3
 from typing import Optional, Set, Tuple, List
 from io import StringIO
 import csv
@@ -260,80 +259,32 @@ def _score_lead(
 
 
 # ---------------------------------------------------------------------
-# DB HELPERS (legacy sqlite3 -> leads.db)
+# DB HELPERS
 # ---------------------------------------------------------------------
 
 
-def get_leads_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(BASE_DIR / "leads.db"))
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
-    cur = conn.cursor()
-    cur.execute(f"PRAGMA table_info({table})")
-    cols = [r[1] for r in cur.fetchall()]
-    return column in cols
-
-
-def ensure_leads_table(conn: sqlite3.Connection) -> None:
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS leads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at TEXT NOT NULL,
-            name TEXT,
-            email TEXT,
-            business TEXT,
-            website TEXT,
-            budget TEXT,
-            link TEXT,
-            role TEXT,
-            cadence TEXT,
-            recent TEXT,
-            status TEXT,
-            run_count INTEGER DEFAULT 0,
-            last_run TEXT,
-            score INTEGER DEFAULT 0,
-            tier TEXT DEFAULT 'cold',
-            score_notes TEXT
-        )
-        """)
-    conn.commit()
-
-    if not _column_exists(conn, "leads", "website"):
-        try:
-            cur.execute("ALTER TABLE leads ADD COLUMN website TEXT")
-            conn.commit()
-        except Exception as exc:
-            print("[db] Failed to add leads.website:", exc)
-
-    if not _column_exists(conn, "leads", "score"):
-        try:
-            cur.execute("ALTER TABLE leads ADD COLUMN score INTEGER DEFAULT 0")
-            conn.commit()
-        except Exception as exc:
-            print("[db] Failed to add leads.score:", exc)
-
-    if not _column_exists(conn, "leads", "tier"):
-        try:
-            cur.execute("ALTER TABLE leads ADD COLUMN tier TEXT DEFAULT 'cold'")
-            conn.commit()
-        except Exception as exc:
-            print("[db] Failed to add leads.tier:", exc)
-
-    if not _column_exists(conn, "leads", "score_notes"):
-        try:
-            cur.execute("ALTER TABLE leads ADD COLUMN score_notes TEXT")
-            conn.commit()
-        except Exception as exc:
-            print("[db] Failed to add leads.score_notes:", exc)
-
-
-# ---------------------------------------------------------------------
-# SQLAlchemy DB helper (duding.db)
-# ---------------------------------------------------------------------
+def _lead_to_dict(lead: "Lead") -> dict:
+    """Convert a Lead ORM object to a plain dict so templates use row['key'] syntax."""
+    return {
+        "id": lead.id,
+        "created_at": lead.created_at,
+        "created": lead.created_at,
+        "name": lead.name,
+        "email": lead.email,
+        "business": lead.business,
+        "website": lead.website,
+        "budget": lead.budget,
+        "link": lead.link,
+        "role": lead.role,
+        "cadence": lead.cadence,
+        "recent": lead.recent,
+        "status": lead.status or "new",
+        "run_count": lead.run_count or 0,
+        "last_run": lead.last_run,
+        "score": lead.score or 0,
+        "tier": lead.tier or "cold",
+        "score_notes": lead.score_notes,
+    }
 
 
 def get_db():
@@ -1077,7 +1028,7 @@ async def debug_builds(request: Request, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------
-# LEAD CAPTURE (legacy) -> leads.db
+# LEAD CAPTURE
 # ---------------------------------------------------------------------
 
 
@@ -1113,46 +1064,33 @@ async def submit_lead(request: Request, background_tasks: BackgroundTasks):
     )
 
     try:
-        conn = get_leads_conn()
-        ensure_leads_table(conn)
-        cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO leads
-                (created_at, name, email, business, website, budget, link, role, cadence, recent,
-                 status, run_count, last_run, score, tier, score_notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                created_at,
-                name,
-                email,
-                business,
-                website,
-                budget,
-                link,
-                role,
-                cadence,
-                recent,
-                "new",
-                0,
-                None,
-                score,
-                tier,
-                score_notes,
-            ),
+        db = SessionLocal()
+        new_lead = Lead(
+            created_at=created_at,
+            name=name,
+            email=email,
+            business=business,
+            website=website,
+            budget=budget,
+            link=link,
+            role=role,
+            cadence=cadence,
+            recent=recent,
+            status="new",
+            run_count=0,
+            last_run=None,
+            score=score,
+            tier=tier,
+            score_notes=score_notes,
         )
-        conn.commit()
+        db.add(new_lead)
+        db.commit()
     except Exception as exc:
         print("[lead] Error inserting lead:", exc)
-        try:
-            conn.close()
-        except Exception:
-            pass
         return RedirectResponse(url="/?error=1#lead-form", status_code=303)
     finally:
         try:
-            conn.close()
+            db.close()
         except Exception:
             pass
 
@@ -1225,7 +1163,7 @@ async def logout(request: Request):
 
 
 # ---------------------------------------------------------------------
-# DASHBOARD / AUTOMATION (legacy) -> leads.db
+# DASHBOARD / AUTOMATION
 # ---------------------------------------------------------------------
 
 
@@ -1692,32 +1630,13 @@ async def dashboard(request: Request):
 
     rows = []
     try:
-        conn = get_leads_conn()
-        ensure_leads_table(conn)
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT
-                id,
-                created_at AS created,
-                name,
-                email,
-                business,
-                website,
-                budget,
-                COALESCE(status, 'new') AS status,
-                COALESCE(run_count, 0) AS run_count,
-                last_run,
-                COALESCE(score, 0) AS score,
-                COALESCE(tier, 'cold') AS tier
-            FROM leads
-            ORDER BY id DESC
-            """)
-        rows = cur.fetchall()
+        db = SessionLocal()
+        rows = [_lead_to_dict(l) for l in db.query(Lead).order_by(Lead.id.desc()).all()]
     except Exception as exc:
         print("[dashboard] DB error:", exc)
     finally:
         try:
-            conn.close()
+            db.close()
         except Exception:
             pass
 
@@ -1770,32 +1689,13 @@ async def automation(request: Request):
 
     rows = []
     try:
-        conn = get_leads_conn()
-        ensure_leads_table(conn)
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT
-                id,
-                created_at AS created,
-                name,
-                email,
-                business,
-                website,
-                budget,
-                COALESCE(status, 'new') AS status,
-                COALESCE(run_count, 0) AS run_count,
-                last_run,
-                COALESCE(score, 0) AS score,
-                COALESCE(tier, 'cold') AS tier
-            FROM leads
-            ORDER BY id DESC
-            """)
-        rows = cur.fetchall()
+        db = SessionLocal()
+        rows = [_lead_to_dict(l) for l in db.query(Lead).order_by(Lead.id.desc()).all()]
     except Exception as exc:
         print("[automation] DB error:", exc)
     finally:
         try:
-            conn.close()
+            db.close()
         except Exception:
             pass
 
@@ -1814,26 +1714,18 @@ async def automation_run(request: Request, lead_id: int):
     now = datetime.now(timezone.utc).isoformat()
 
     try:
-        conn = get_leads_conn()
-        ensure_leads_table(conn)
-        cur = conn.cursor()
-        cur.execute(
-            """
-            UPDATE leads
-            SET
-                status = 'completed',
-                run_count = COALESCE(run_count, 0) + 1,
-                last_run = ?
-            WHERE id = ?
-            """,
-            (now, lead_id),
-        )
-        conn.commit()
+        db = SessionLocal()
+        lead = db.query(Lead).filter(Lead.id == lead_id).first()
+        if lead:
+            lead.status = "completed"
+            lead.run_count = (lead.run_count or 0) + 1
+            lead.last_run = now
+            db.commit()
     except Exception as exc:
         print("[automation_run] DB error:", exc)
     finally:
         try:
-            conn.close()
+            db.close()
         except Exception:
             pass
 
@@ -1842,29 +1734,26 @@ async def automation_run(request: Request, lead_id: int):
 
 
 # ---------------------------------------------------------------------
-# BUSINESS PROFILE + QUOTE ROUTES (legacy) -> leads.db + scan
+# BUSINESS PROFILE + QUOTE ROUTES
 # ---------------------------------------------------------------------
 
 
-def _get_lead_row(lead_id: int) -> Optional[sqlite3.Row]:
+def _get_lead_row(lead_id: int) -> Optional[dict]:
     try:
-        conn = get_leads_conn()
-        ensure_leads_table(conn)
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
-        row = cur.fetchone()
+        db = SessionLocal()
+        lead = db.query(Lead).filter(Lead.id == lead_id).first()
+        return _lead_to_dict(lead) if lead else None
     except Exception as exc:
         print("[get_lead_row] DB error:", exc)
-        row = None
+        return None
     finally:
         try:
-            conn.close()
+            db.close()
         except Exception:
             pass
-    return row
 
 
-def _enrich_profile_with_scan(profile: dict, row: sqlite3.Row | None) -> dict:
+def _enrich_profile_with_scan(profile: dict, row: Optional[dict]) -> dict:
     try:
         website = (
             profile.get("website") or (row["website"] if row else "") or ""
@@ -1963,66 +1852,22 @@ async def leads_list(request: Request, q: str = ""):
     rows = []
     q = (q or "").strip()
     try:
-        conn = get_leads_conn()
-        ensure_leads_table(conn)
-        cur = conn.cursor()
+        db = SessionLocal()
+        query = db.query(Lead)
         if q:
             like = f"%{q}%"
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    created_at,
-                    name,
-                    email,
-                    business,
-                    website,
-                    budget,
-                    link,
-                    role,
-                    cadence,
-                    recent,
-                    status,
-                    run_count,
-                    last_run,
-                    COALESCE(score, 0) AS score,
-                    COALESCE(tier, 'cold') AS tier,
-                    score_notes
-                FROM leads
-                WHERE name LIKE ? OR email LIKE ? OR business LIKE ? OR link LIKE ?
-                ORDER BY id DESC
-                """,
-                (like, like, like, like),
+            query = query.filter(
+                Lead.name.ilike(like)
+                | Lead.email.ilike(like)
+                | Lead.business.ilike(like)
+                | Lead.link.ilike(like)
             )
-        else:
-            cur.execute("""
-                SELECT
-                    id,
-                    created_at,
-                    name,
-                    email,
-                    business,
-                    website,
-                    budget,
-                    link,
-                    role,
-                    cadence,
-                    recent,
-                    status,
-                    run_count,
-                    last_run,
-                    COALESCE(score, 0) AS score,
-                    COALESCE(tier, 'cold') AS tier,
-                    score_notes
-                FROM leads
-                ORDER BY id DESC
-                """)
-        rows = cur.fetchall()
+        rows = [_lead_to_dict(l) for l in query.order_by(Lead.id.desc()).all()]
     except Exception as exc:
         print("[leads_list] DB error:", exc)
     finally:
         try:
-            conn.close()
+            db.close()
         except Exception:
             pass
 
@@ -2369,26 +2214,14 @@ async def export_csv(request: Request):
         return RedirectResponse(url="/login", status_code=303)
 
     try:
-        conn = get_leads_conn()
-        ensure_leads_table(conn)
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT
-                id, created_at, name, email, business, website, budget, link,
-                role, cadence, recent, status, run_count, last_run,
-                COALESCE(score, 0) AS score,
-                COALESCE(tier, 'cold') AS tier,
-                score_notes
-            FROM leads
-            ORDER BY id DESC
-            """)
-        rows = cur.fetchall()
+        db = SessionLocal()
+        rows = [_lead_to_dict(l) for l in db.query(Lead).order_by(Lead.id.desc()).all()]
     except Exception as exc:
         print("[export_csv] DB error:", exc)
         rows = []
     finally:
         try:
-            conn.close()
+            db.close()
         except Exception:
             pass
 
@@ -2451,20 +2284,16 @@ async def export_txt(request: Request):
 
     emails: Set[str] = set()
     try:
-        conn = get_leads_conn()
-        ensure_leads_table(conn)
-        cur = conn.cursor()
-        cur.execute("SELECT email FROM leads WHERE email IS NOT NULL AND email != ''")
-        rows = cur.fetchall()
-        for r in rows:
-            em = (r["email"] or "").strip().lower()
+        db = SessionLocal()
+        for lead in db.query(Lead).filter(Lead.email.isnot(None), Lead.email != "").all():
+            em = (lead.email or "").strip().lower()
             if em:
                 emails.add(em)
     except Exception as exc:
         print("[export_txt] DB error:", exc)
     finally:
         try:
-            conn.close()
+            db.close()
         except Exception:
             pass
 

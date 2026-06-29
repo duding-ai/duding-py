@@ -18,7 +18,6 @@ import email as email_lib
 import imaplib
 import os
 import re
-import sqlite3
 import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
@@ -80,35 +79,6 @@ _scheduler: Optional[BackgroundScheduler] = None
 
 # ── DB schema bootstrap ───────────────────────────────────────────────────────
 
-def _ensure_build_columns() -> None:
-    """Safely add new columns to the builds table without requiring alembic run."""
-    try:
-        db_url = os.getenv("DATABASE_URL", "sqlite:///duding.db")
-        # Strip sqlite:/// prefix to get the file path
-        db_path = db_url.replace("sqlite:///", "").replace("sqlite://", "")
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
-        cur.execute("PRAGMA table_info(builds)")
-        existing = {row[1] for row in cur.fetchall()}
-        new_cols = [
-            ("deposit_paid_at",   "DATETIME"),
-            ("onboarding_sent",   "INTEGER NOT NULL DEFAULT 0"),
-            ("day3_sent",         "INTEGER NOT NULL DEFAULT 0"),
-            ("day7_sent",         "INTEGER NOT NULL DEFAULT 0"),
-            ("day10_sent",        "INTEGER NOT NULL DEFAULT 0"),
-            ("completed_at",      "DATETIME"),
-            ("testimonial_sent",  "INTEGER NOT NULL DEFAULT 0"),
-            ("upsell_sent",       "INTEGER NOT NULL DEFAULT 0"),
-            ("upsell_day37_sent", "INTEGER NOT NULL DEFAULT 0"),
-        ]
-        for col, typ in new_cols:
-            if col not in existing:
-                conn.execute(f"ALTER TABLE builds ADD COLUMN {col} {typ}")
-                conn.commit()
-                _log(f"DB: added builds.{col}")
-        conn.close()
-    except Exception as exc:
-        _log(f"DB bootstrap warning: {exc}")
 
 
 # ── Core helpers ──────────────────────────────────────────────────────────────
@@ -1176,8 +1146,6 @@ def start_engine() -> None:
     if _scheduler and _scheduler.running:
         _log("Already running")
         return
-
-    _ensure_build_columns()
 
     _scheduler = BackgroundScheduler(timezone="UTC")
     now = datetime.now(timezone.utc)
