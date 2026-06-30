@@ -80,6 +80,16 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 Base.metadata.create_all(bind=engine)
 
+# Inline column migrations — safe to re-run; IF NOT EXISTS is idempotent.
+# Required because create_all() only creates missing tables, not missing columns.
+if not engine.url.drivername.startswith("sqlite"):
+    with engine.connect() as _conn:
+        _conn.execute(__import__("sqlalchemy").text(
+            "ALTER TABLE builds ADD COLUMN IF NOT EXISTS "
+            "retainer_upsell_sent BOOLEAN NOT NULL DEFAULT false"
+        ))
+        _conn.commit()
+
 
 # ---------------------------------------------------------------------
 # AUTONOMOUS OUTREACH ENGINE — lifecycle hooks
