@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Clients — Duding{% endblock %}
+
+{% block content %}
+<section class="wrap pad outreach-page">
+
+  <header class="admin-header">
+    <div>
+      <p class="eyebrow">CRM</p>
+      <h1>Clients</h1>
+      <p class="muted">All active Duding.ai clients — installs, retainers, and internal projects.</p>
+    </div>
+    <div class="admin-header-actions">
+      <button class="btn btn-primary" onclick="document.getElementById('add-client-panel').classList.toggle('hidden')">
+        + Add Client
+      </button>
+    </div>
+  </header>
+
+  {# ── Add client form (hidden by default) ── #}
+  <div id="add-client-panel" class="card hidden" style="padding:20px 24px;margin-bottom:28px;">
+    <h2 style="font-size:15px;font-weight:700;margin:0 0 16px;">New Client</h2>
+    <form method="POST" action="/dashboard/clients" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:end;">
+      <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;">
+        Name *
+        <input name="name" required placeholder="CHKD, Acme Plumbing…" style="padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;">
+        Type
+        <select name="type" style="padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;">
+          <option value="install">Install</option>
+          <option value="retainer">Retainer</option>
+          <option value="internal">Internal</option>
+        </select>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;">
+        Status
+        <select name="status" style="padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;">
+          <option value="active">Active</option>
+          <option value="paused">Paused</option>
+          <option value="completed">Completed</option>
+        </select>
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;">
+        Domain
+        <input name="domain" placeholder="getchkd.app" style="padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;">
+        App URL
+        <input name="dashboard_url" type="url" placeholder="https://getchkd.app" style="padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;">
+        External ID
+        <input name="external_id" placeholder="Build ID or retainer record ID" style="padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;">
+      </label>
+      <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;grid-column:1/-1;">
+        Notes
+        <input name="notes" placeholder="Optional notes" style="padding:8px 10px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;">
+      </label>
+      <div style="grid-column:1/-1;display:flex;gap:12px;">
+        <button type="submit" class="btn btn-primary">Create Client</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('add-client-panel').classList.add('hidden')">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  {# ── Clients table ── #}
+  {% if clients %}
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <thead>
+        <tr style="background:#f9fafb;border-bottom:1px solid #e5e7eb;">
+          <th style="text-align:left;padding:12px 16px;color:#6b7280;font-weight:600;">Client</th>
+          <th style="text-align:left;padding:12px 8px;color:#6b7280;font-weight:600;">Type</th>
+          <th style="text-align:left;padding:12px 8px;color:#6b7280;font-weight:600;">Status</th>
+          <th style="text-align:left;padding:12px 8px;color:#6b7280;font-weight:600;">Quick stat</th>
+          <th style="text-align:left;padding:12px 8px;color:#6b7280;font-weight:600;">Last activity</th>
+          <th style="padding:12px 16px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in clients %}
+        {% set c = row.client %}
+        {% set x = row.extra %}
+        <tr style="border-bottom:1px solid #f3f4f6;" class="client-row">
+          <td style="padding:14px 16px;">
+            <div style="font-weight:700;color:#111827;">{{ c.name }}</div>
+            {% if c.domain %}
+            <div style="font-size:12px;color:#9ca3af;margin-top:2px;">{{ c.domain }}</div>
+            {% endif %}
+          </td>
+          <td style="padding:14px 8px;">
+            {% if c.type == 'internal' %}
+            <span class="status-pill" style="background:#f3e8ff;color:#7c3aed;">internal</span>
+            {% elif c.type == 'install' %}
+            <span class="status-pill" style="background:#dbeafe;color:#1e40af;">install</span>
+            {% elif c.type == 'retainer' %}
+            <span class="status-pill" style="background:#d1fae5;color:#065f46;">retainer</span>
+            {% else %}
+            <span class="status-pill">{{ c.type }}</span>
+            {% endif %}
+          </td>
+          <td style="padding:14px 8px;">
+            {% if c.status == 'active' %}
+            <span class="status-pill" style="background:#ecfdf5;color:#059669;">active</span>
+            {% elif c.status == 'paused' %}
+            <span class="status-pill" style="background:#fef3c7;color:#92400e;">paused</span>
+            {% elif c.status == 'completed' %}
+            <span class="status-pill" style="background:#f3f4f6;color:#6b7280;">completed</span>
+            {% else %}
+            <span class="status-pill">{{ c.status }}</span>
+            {% endif %}
+          </td>
+          <td style="padding:14px 8px;color:#374151;">
+            {% if c.type == 'internal' %}
+              {{ x.emails_sent or 0 }} emails sent
+            {% elif c.type == 'install' and x.get('build') %}
+              {% set b = x.build %}
+              <span class="status-pill" style="font-size:11px;
+                {% if b.status == 'LIVE' %}background:#d1fae5;color:#065f46;
+                {% elif b.status == 'DEPOSIT_PAID' %}background:#dbeafe;color:#1e40af;
+                {% elif b.status == 'INSTALLING' %}background:#fef3c7;color:#92400e;
+                {% else %}background:#f3f4f6;color:#6b7280;{% endif %}">
+                {{ b.status }}
+              </span>
+              {% if b.deposit_paid %}
+              <span style="font-size:11px;color:#059669;margin-left:6px;">&#10003; deposit</span>
+              {% endif %}
+            {% elif c.type == 'retainer' and x.get('retainer') %}
+              {% set r = x.retainer %}
+              {{ r.tier | title }} — {{ r.status | replace('_', ' ') }}
+            {% else %}
+              <span style="color:#9ca3af;">—</span>
+            {% endif %}
+          </td>
+          <td style="padding:14px 8px;color:#6b7280;white-space:nowrap;font-size:12px;">
+            {% if x.get('last_activity') %}
+              {{ x.last_activity.strftime('%b %d') if x.last_activity else '—' }}
+            {% else %}
+              {{ c.created_at.strftime('%b %d, %Y') if c.created_at else '—' }}
+            {% endif %}
+          </td>
+          <td style="padding:14px 16px;text-align:right;">
+            <a href="/dashboard/clients/{{ c.id }}" class="btn btn-secondary" style="font-size:12px;padding:5px 12px;">View →</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% else %}
+  <div class="card" style="padding:40px;text-align:center;">
+    <p class="muted">No clients yet. Add your first client above.</p>
+  </div>
+  {% endif %}
+
+</section>
+
+<style>
+.client-row:hover { background:#f9fafb; }
+.hidden { display:none !important; }
+</style>
+{% endblock %}

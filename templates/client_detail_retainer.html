@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ client.name }} — Duding{% endblock %}
+
+{% block content %}
+<section class="wrap pad outreach-page">
+
+  <header class="admin-header">
+    <div>
+      <p class="eyebrow"><a href="/dashboard/clients" style="color:inherit;text-decoration:none;">Clients</a> / Retainer</p>
+      <h1>{{ client.name }}</h1>
+      <p class="muted">
+        {% if client.domain %}{{ client.domain }}{% endif %}
+        {% if client.notes %} — {{ client.notes }}{% endif %}
+      </p>
+    </div>
+    <div class="admin-header-actions">
+      <a href="/dashboard/clients" class="btn btn-secondary">← Clients</a>
+      {% if client.dashboard_url %}
+      <a href="{{ client.dashboard_url }}" target="_blank" rel="noopener" class="btn btn-ghost">Open Site ↗</a>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if retainer %}
+
+  {# ── Stats row ── #}
+  <div class="admin-stat-row" style="margin-bottom:32px;">
+    <article class="admin-stat-card">
+      <p class="stat-label">Tier</p>
+      <p class="stat-value" style="font-size:20px;">{{ retainer.tier | title }}</p>
+    </article>
+    <article class="admin-stat-card">
+      <p class="stat-label">Status</p>
+      <p class="stat-value" style="font-size:20px;">{{ retainer.status | replace('_', ' ') | title }}</p>
+    </article>
+    <article class="admin-stat-card" style="{% if retainer.onboarded_at %}border-color:#10b981;{% endif %}">
+      <p class="stat-label" style="{% if retainer.onboarded_at %}color:#065f46;{% endif %}">Onboarding</p>
+      <p class="stat-value" style="font-size:20px;{% if retainer.onboarded_at %}color:#059669;{% endif %}">
+        {% if retainer.onboarded_at %}Complete{% else %}Pending{% endif %}
+      </p>
+    </article>
+  </div>
+
+  {# ── Two-column: contact + onboarding info ── #}
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px;">
+
+    <div class="card" style="padding:20px 24px;">
+      <h2 style="font-size:15px;font-weight:700;margin:0 0 16px;">Contact</h2>
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <tbody>
+          {% macro row(label, val) %}
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px 0;color:#6b7280;font-weight:500;width:40%;">{{ label }}</td>
+            <td style="padding:8px 0;color:#111827;">{{ val or '—' }}</td>
+          </tr>
+          {% endmacro %}
+          {{ row('Business', retainer.business_name) }}
+          {{ row('Contact', retainer.contact_name) }}
+          {{ row('Email', retainer.email) }}
+          {{ row('Tier', retainer.tier | title) }}
+          {{ row('Status', retainer.status | replace('_', ' ') | title) }}
+          {% if retainer.accepted_at %}
+          {{ row('Accepted', retainer.accepted_at.strftime('%b %d, %Y')) }}
+          {% endif %}
+          {% if retainer.onboarded_at %}
+          {{ row('Onboarded', retainer.onboarded_at.strftime('%b %d, %Y')) }}
+          {% endif %}
+          {{ row('Created', retainer.created_at.strftime('%b %d, %Y') if retainer.created_at else None) }}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="padding:20px 24px;">
+      <h2 style="font-size:15px;font-weight:700;margin:0 0 16px;">Onboarding Info</h2>
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <tbody>
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px 0;color:#6b7280;font-weight:500;vertical-align:top;width:40%;">Ad account</td>
+            <td style="padding:8px 0;color:#111827;">{{ retainer.ad_account_email or '—' }}</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px 0;color:#6b7280;font-weight:500;vertical-align:top;">Social logins</td>
+            <td style="padding:8px 0;color:#111827;white-space:pre-wrap;">{{ retainer.social_logins or '—' }}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0;color:#6b7280;font-weight:500;vertical-align:top;">Brand assets</td>
+            <td style="padding:8px 0;color:#111827;white-space:pre-wrap;">{{ retainer.brand_assets_note or '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  {% else %}
+
+  <div class="card" style="padding:32px;text-align:center;">
+    <p class="muted">
+      No retainer record linked yet.
+      {% if client.external_id %}
+      Looking for RetainerClient ID: <code>{{ client.external_id }}</code> — check that it matches a valid record.
+      {% else %}
+      Set the <strong>External ID</strong> to the numeric RetainerClient ID to pull in data.
+      {% endif %}
+    </p>
+  </div>
+
+  {% endif %}
+
+</section>
+{% endblock %}

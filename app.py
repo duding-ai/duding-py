@@ -55,6 +55,7 @@ from models.content_idea import ContentIdea
 from models.client_draft import ClientDraft
 from models.retainer_client import RetainerClient
 from models.chkd_email import ChkdEmail
+from models.client import Client
 
 from schemas import LeadCreate, LeadRead, LeadEventRead
 
@@ -102,6 +103,25 @@ CHKD_WEBHOOK_SECRET = os.getenv("CHKD_WEBHOOK_SECRET", "")
 async def _engine_startup():
     from outreach_engine import start_engine
     start_engine()
+
+
+@app.on_event("startup")
+async def _seed_clients():
+    """Seed CHKD as the first client if not already present."""
+    db = SessionLocal()
+    try:
+        if not db.query(Client).filter(Client.domain == "getchkd.app").first():
+            db.add(Client(
+                name="CHKD",
+                type="internal",
+                status="active",
+                domain="getchkd.app",
+                dashboard_url="https://getchkd.app",
+                notes="First Duding.ai client. Supabase backend, Netlify hosting.",
+            ))
+            db.commit()
+    finally:
+        db.close()
 
 
 @app.on_event("shutdown")
@@ -2671,26 +2691,120 @@ async def chkd_profile_webhook(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/dashboard/chkd", response_class=HTMLResponse)
-async def chkd_dashboard(request: Request, db: Session = Depends(get_db)):
+async def chkd_dashboard_redirect(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+    chkd = db.query(Client).filter(Client.domain == "getchkd.app").first()
+    if chkd:
+        return RedirectResponse(f"/dashboard/clients/{chkd.id}", status_code=302)
+    return RedirectResponse("/dashboard/clients", status_code=302)
+
+
+@app.get("/dashboard/clients", response_class=HTMLResponse)
+async def clients_list(request: Request, db: Session = Depends(get_db)):
     if not request.session.get("user_id"):
         return RedirectResponse("/login", status_code=302)
 
-    from services.chkd import get_chkd_stats
-    stats = get_chkd_stats()
+    clients = db.query(Client).order_by(Client.created_at.asc()).all()
 
-    recent_emails = (
-        db.query(ChkdEmail)
-        .order_by(ChkdEmail.sent_at.desc())
-        .limit(50)
-        .all()
-    )
+    enriched = []
+    for c in clients:
+        extra: dict = {}
+        if c.type == "internal":
+            extra["emails_sent"] = db.query(ChkdEmail).count()
+            last = db.query(ChkdEmail.sent_at).order_by(ChkdEmail.sent_at.desc()).scalar()
+            extra["last_activity"] = last
+        elif c.type == "install" and c.external_id:
+            build = db.query(Build).filter(Build.build_id == c.external_id).first()
+            extra["build"] = build
+            extra["last_activity"] = getattr(build, "updated_at", None) if build else None
+        elif c.type == "retainer" and c.external_id:
+            try:
+                rc = db.query(RetainerClient).filter(
+                    RetainerClient.id == int(c.external_id)
+                ).first()
+            except (ValueError, TypeError):
+                rc = None
+            extra["retainer"] = rc
+            extra["last_activity"] = getattr(rc, "onboarded_at", None) if rc else None
+        enriched.append({"client": c, "extra": extra})
 
-    return templates.TemplateResponse("chkd_dashboard.html", {
-        "request":      request,
-        "admin_name":   ADMIN_NAME,
-        "stats":        stats,
-        "recent_emails": recent_emails,
+    return templates.TemplateResponse("clients_list.html", {
+        "request":    request,
+        "admin_name": ADMIN_NAME,
+        "clients":    enriched,
     })
+
+
+@app.post("/dashboard/clients", response_class=HTMLResponse)
+async def client_create(
+    request: Request,
+    name:          str = Form(...),
+    type:          str = Form("install"),
+    status:        str = Form("active"),
+    domain:        str = Form(""),
+    dashboard_url: str = Form(""),
+    external_id:   str = Form(""),
+    notes:         str = Form(""),
+    db: Session = Depends(get_db),
+):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    c = Client(
+        name=name,
+        type=type,
+        status=status,
+        domain=domain or None,
+        dashboard_url=dashboard_url or None,
+        external_id=external_id or None,
+        notes=notes or None,
+    )
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return RedirectResponse(f"/dashboard/clients/{c.id}", status_code=303)
+
+
+@app.get("/dashboard/clients/{client_id}", response_class=HTMLResponse)
+async def client_detail(request: Request, client_id: int, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    ctx: dict = {"request": request, "admin_name": ADMIN_NAME, "client": client}
+
+    if client.type == "internal":
+        from services.chkd import get_chkd_stats
+        ctx["stats"] = get_chkd_stats()
+        ctx["recent_emails"] = (
+            db.query(ChkdEmail).order_by(ChkdEmail.sent_at.desc()).limit(50).all()
+        )
+        return templates.TemplateResponse("client_detail_internal.html", ctx)
+
+    if client.type == "install":
+        build = None
+        if client.external_id:
+            build = db.query(Build).filter(Build.build_id == client.external_id).first()
+        ctx["build"] = build
+        return templates.TemplateResponse("client_detail_install.html", ctx)
+
+    if client.type == "retainer":
+        rc = None
+        if client.external_id:
+            try:
+                rc = db.query(RetainerClient).filter(
+                    RetainerClient.id == int(client.external_id)
+                ).first()
+            except (ValueError, TypeError):
+                pass
+        ctx["retainer"] = rc
+        return templates.TemplateResponse("client_detail_retainer.html", ctx)
+
+    raise HTTPException(status_code=400, detail=f"Unknown client type: {client.type}")
 
 
 # ---------------------------------------------------------------------
