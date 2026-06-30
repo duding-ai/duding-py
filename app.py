@@ -54,6 +54,7 @@ from models.referral import Referral
 from models.content_idea import ContentIdea
 from models.client_draft import ClientDraft
 from models.retainer_client import RetainerClient
+from models.chkd_email import ChkdEmail
 
 from schemas import LeadCreate, LeadRead, LeadEventRead
 
@@ -89,6 +90,8 @@ if not engine.url.drivername.startswith("sqlite"):
             "retainer_upsell_sent BOOLEAN NOT NULL DEFAULT false"
         ))
         _conn.commit()
+
+CHKD_WEBHOOK_SECRET = os.getenv("CHKD_WEBHOOK_SECRET", "")
 
 
 # ---------------------------------------------------------------------
@@ -2627,6 +2630,67 @@ async def export_txt(request: Request):
     body = "\n".join(sorted(emails)) + "\n"
     headers = {"Content-Disposition": 'attachment; filename="emails.txt"'}
     return StreamingResponse(StringIO(body), media_type="text/plain", headers=headers)
+
+
+# ---------------------------------------------------------------------
+# CHKD CLIENT — webhook + admin dashboard
+# ---------------------------------------------------------------------
+
+@app.post("/chkd/webhook/profile")
+async def chkd_profile_webhook(request: Request, db: Session = Depends(get_db)):
+    """
+    Supabase database webhook — fires on INSERT into profiles table.
+    Configure in Supabase dashboard: Database → Webhooks → profiles → INSERT.
+    Set Authorization header to: Bearer {CHKD_WEBHOOK_SECRET}
+    """
+    if CHKD_WEBHOOK_SECRET:
+        auth = request.headers.get("Authorization", "")
+        if auth != f"Bearer {CHKD_WEBHOOK_SECRET}":
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    if payload.get("type") != "INSERT":
+        return {"ok": True, "skipped": "not an INSERT"}
+
+    record  = payload.get("record") or {}
+    user_id = str(record.get("id", ""))
+    email   = record.get("email", "")
+    name    = record.get("full_name") or record.get("name") or email
+
+    if not email:
+        return {"ok": True, "skipped": "no email in record"}
+
+    from services.chkd import build_welcome_email, send_chkd_email
+    subj, body = build_welcome_email(name)
+    sent = send_chkd_email(db, user_id, email, "welcome", subj, body)
+    return {"ok": True, "sent": sent}
+
+
+@app.get("/dashboard/chkd", response_class=HTMLResponse)
+async def chkd_dashboard(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+
+    from services.chkd import get_chkd_stats
+    stats = get_chkd_stats()
+
+    recent_emails = (
+        db.query(ChkdEmail)
+        .order_by(ChkdEmail.sent_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    return templates.TemplateResponse("chkd_dashboard.html", {
+        "request":      request,
+        "admin_name":   ADMIN_NAME,
+        "stats":        stats,
+        "recent_emails": recent_emails,
+    })
 
 
 # ---------------------------------------------------------------------

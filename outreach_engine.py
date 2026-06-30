@@ -1268,6 +1268,18 @@ def job_check_resend_domain_verification() -> None:
         _log(f"[domain-check] ERROR: {exc}")
 
 
+# ── CHKD client job ───────────────────────────────────────────────────────────
+
+def job_chkd_daily() -> None:
+    """CHKD client — Day-3 re-engagement and Day-7 streak emails (daily 8am UTC)."""
+    from services.chkd import run_daily_checks
+    try:
+        counts = run_daily_checks()
+        _log(f"[chkd] daily sweep: {counts}")
+    except Exception as exc:
+        _log(f"[chkd] ERROR: {exc}")
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def start_engine() -> None:
@@ -1342,13 +1354,20 @@ def start_engine() -> None:
         next_run_time=now + timedelta(seconds=45),
         max_instances=1, misfire_grace_time=60,
     )
+    # CHKD client — Day-3 re-engagement + Day-7 streak daily at 8am UTC
+    _scheduler.add_job(
+        job_chkd_daily,
+        CronTrigger(hour=8, minute=0, timezone="UTC"),
+        id="chkd_daily",
+        max_instances=1, misfire_grace_time=3600,
+    )
 
     _scheduler.start()
     _state["running"] = True
     _log(
         "Engine started — "
         "find@+2m, reply-check@+3m, send@+5m, followups@+10m, build-check@+15m, "
-        "domain-verify@+45s (every 15m until verified)"
+        "domain-verify@+45s (every 15m until verified), chkd-daily@08:00UTC"
     )
 
 
