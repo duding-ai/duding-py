@@ -376,6 +376,47 @@ def _testimonial_email(build: Build):
     return subj, body
 
 
+# ── SECTION 7a — Retainer upsell email builder ───────────────────────────────
+
+APP_BASE_URL = os.getenv("APP_BASE_URL", "https://duding.ai")
+
+
+def _retainer_upsell_email(build: Build):
+    name = build.contact_name or "there"
+    biz  = build.business_name or "your business"
+    bid  = build.build_id
+
+    growth_link = f"{APP_BASE_URL}/retainer/accept/{bid}/growth"
+    scale_link  = f"{APP_BASE_URL}/retainer/accept/{bid}/scale"
+
+    subj = f"{biz} — keep the momentum going"
+    body = (
+        f"Hi {name},\n\n"
+        f"Your lead intake system is live. Every inbound lead is being captured, "
+        f"followed up, and routed. The hard part is done.\n\n"
+        f"Now the question is: what demand are you sending into it?\n\n"
+        f"I have two ongoing growth options for clients whose systems are live:\n\n"
+        f"── Growth Retainer · $997/month ──\n"
+        f"• Google + Meta ad management\n"
+        f"• Monthly content calendar (built from your real business data)\n"
+        f"• Performance reporting tied directly to your dashboard\n"
+        f"  (leads → deposits → booked revenue — not vanity metrics)\n\n"
+        f"Accept Growth Retainer → {growth_link}\n\n"
+        f"── Scale Retainer · $1,497/month ──\n"
+        f"• Everything in Growth\n"
+        f"• Full brand build-out (social, website, creative)\n"
+        f"• Bi-weekly strategy calls\n"
+        f"• Priority support\n\n"
+        f"Accept Scale Retainer → {scale_link}\n\n"
+        f"Both options start after a short onboarding — I collect your ad account "
+        f"info and brand assets, and we're running within the week.\n\n"
+        f"No obligation. Just click the link for whichever tier makes sense and "
+        f"fill out a quick form. I'll follow up within 24 hours to confirm.\n\n"
+        f"Tommy"
+    )
+    return subj, body
+
+
 # ── SECTION 7 — Upsell email builder ─────────────────────────────────────────
 
 def _upsell_email(build: Build, is_followup: bool = False):
@@ -988,6 +1029,14 @@ def job_build_status_emails() -> None:
                 db.add(build)
                 db.commit()
                 _log(f"{'✓' if ok else '✗'} Day-10 LIVE → {build.email}")
+
+            if build.status == "LIVE" and not build.retainer_upsell_sent:
+                subj, body = _retainer_upsell_email(build)
+                ok = _send(build.email, subj, body, from_name="Tommy")
+                build.retainer_upsell_sent = True
+                db.add(build)
+                db.commit()
+                _log(f"{'✓' if ok else '✗'} Retainer upsell → {build.email}")
                 _send_sms(f"Build LIVE: {build.business_name or build.email}")
 
         _state["last_build_check_at"] = now

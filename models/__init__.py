@@ -12,6 +12,7 @@ from .outreach_activity import OutreachActivity
 from .referral import Referral
 from .content_idea import ContentIdea
 from .client_draft import ClientDraft
+from .retainer_client import RetainerClient
 
 __all__ = [
     "Base",
@@ -25,4 +26,5 @@ __all__ = [
     "Referral",
     "ContentIdea",
     "ClientDraft",
+    "RetainerClient",
 ]

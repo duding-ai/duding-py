@@ -53,6 +53,7 @@ from models.outreach_activity import OutreachActivity
 from models.referral import Referral
 from models.content_idea import ContentIdea
 from models.client_draft import ClientDraft
+from models.retainer_client import RetainerClient
 
 from schemas import LeadCreate, LeadRead, LeadEventRead
 
@@ -1738,6 +1739,126 @@ async def referral_landing(request: Request, build_id: int, db: Session = Depend
         ))
         db.commit()
     return RedirectResponse(url="/", status_code=302)
+
+
+# ── RETAINER ROUTES ──────────────────────────────────────────────────────────
+
+APP_BASE_URL = os.getenv("APP_BASE_URL", "https://duding.ai")
+
+RETAINER_TIERS = {
+    "growth": {"label": "Growth Retainer", "price": "$997/month"},
+    "scale":  {"label": "Scale Retainer",  "price": "$1,497/month"},
+}
+
+
+@app.get("/retainer/accept/{build_id}/{tier}", response_class=HTMLResponse)
+async def retainer_accept(request: Request, build_id: str, tier: str, db: Session = Depends(get_db)):
+    """Client clicks accept link from email — record intent, redirect to onboard form."""
+    if tier not in RETAINER_TIERS:
+        raise HTTPException(status_code=404, detail="Unknown tier")
+
+    build = db.query(Build).filter(Build.build_id == build_id).first()
+    if not build:
+        raise HTTPException(status_code=404, detail="Build not found")
+
+    existing = db.query(RetainerClient).filter(
+        RetainerClient.build_id == build_id,
+        RetainerClient.tier == tier,
+    ).first()
+    if not existing:
+        rc = RetainerClient(
+            build_id=build_id,
+            tier=tier,
+            status="pending_onboard",
+            email=build.email,
+            contact_name=build.contact_name,
+            business_name=build.business_name,
+            accepted_at=datetime.now(timezone.utc),
+        )
+        db.add(rc)
+        db.commit()
+
+    return RedirectResponse(url=f"/retainer/onboard/{build_id}/{tier}", status_code=302)
+
+
+@app.get("/retainer/onboard/{build_id}/{tier}", response_class=HTMLResponse)
+async def retainer_onboard_get(request: Request, build_id: str, tier: str, db: Session = Depends(get_db)):
+    if tier not in RETAINER_TIERS:
+        raise HTTPException(status_code=404, detail="Unknown tier")
+    rc = db.query(RetainerClient).filter(
+        RetainerClient.build_id == build_id,
+        RetainerClient.tier == tier,
+    ).first()
+    if not rc:
+        raise HTTPException(status_code=404, detail="No retainer record found — please use the link from your email.")
+    tier_info = RETAINER_TIERS[tier]
+    return templates.TemplateResponse("retainer_onboard.html", {
+        "request": request,
+        "rc": rc,
+        "tier_info": tier_info,
+        "submitted": False,
+    })
+
+
+@app.post("/retainer/onboard/{build_id}/{tier}", response_class=HTMLResponse)
+async def retainer_onboard_post(
+    request: Request,
+    build_id: str,
+    tier: str,
+    ad_account_email: str = Form(""),
+    social_logins: str = Form(""),
+    brand_assets_note: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    if tier not in RETAINER_TIERS:
+        raise HTTPException(status_code=404, detail="Unknown tier")
+    rc = db.query(RetainerClient).filter(
+        RetainerClient.build_id == build_id,
+        RetainerClient.tier == tier,
+    ).first()
+    if not rc:
+        raise HTTPException(status_code=404, detail="Retainer record not found")
+
+    rc.ad_account_email = ad_account_email.strip() or None
+    rc.social_logins = social_logins.strip() or None
+    rc.brand_assets_note = brand_assets_note.strip() or None
+    rc.status = "active"
+    rc.onboarded_at = datetime.now(timezone.utc)
+    db.add(rc)
+    db.commit()
+
+    tier_info = RETAINER_TIERS[tier]
+    send_email(
+        ADMIN_NOTIFY_EMAIL,
+        f"Retainer accepted — {rc.business_name or rc.email} ({tier_info['label']})",
+        f"New retainer client onboarded.\n\n"
+        f"Business: {rc.business_name}\nContact: {rc.contact_name}\nEmail: {rc.email}\n"
+        f"Tier: {tier_info['label']} {tier_info['price']}\n\n"
+        f"Ad account email: {rc.ad_account_email or '—'}\n"
+        f"Social logins: {rc.social_logins or '—'}\n"
+        f"Brand assets: {rc.brand_assets_note or '—'}",
+    )
+
+    return templates.TemplateResponse("retainer_onboard.html", {
+        "request": request,
+        "rc": rc,
+        "tier_info": tier_info,
+        "submitted": True,
+    })
+
+
+@app.get("/dashboard/retainer-clients", response_class=HTMLResponse)
+async def retainer_clients_dashboard(request: Request, db: Session = Depends(get_db)):
+    user_id = require_session(request)
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=303)
+    clients = db.query(RetainerClient).order_by(RetainerClient.created_at.desc()).all()
+    return templates.TemplateResponse("retainer_clients.html", {
+        "request": request,
+        "user_id": user_id,
+        "clients": clients,
+        "RETAINER_TIERS": RETAINER_TIERS,
+    })
 
 
 # ── SECTION 8 — Content ideas dashboard ──────────────────────────────────────

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Retainer Clients — Duding{% endblock %}
+
+{% block content %}
+<div class="wrap pad">
+
+  <div style="margin-bottom:28px;">
+    <p class="eyebrow">Admin</p>
+    <h1 style="margin:0 0 4px;font-size:26px;font-weight:800;">Retainer Clients</h1>
+    <p class="muted" style="margin:0;">Clients who have accepted a Growth or Scale retainer.</p>
+  </div>
+
+  <!-- Stats -->
+  <div class="admin-stat-row" style="margin-bottom:32px;">
+    {% set active = clients | selectattr('status', 'eq', 'active') | list %}
+    {% set pending = clients | selectattr('status', 'eq', 'pending_onboard') | list %}
+    {% set growth_count = active | selectattr('tier', 'eq', 'growth') | list | length %}
+    {% set scale_count  = active | selectattr('tier', 'eq', 'scale')  | list | length %}
+
+    <div class="card" style="padding:16px 24px;min-width:120px;">
+      <p class="stat-label">Total Clients</p>
+      <p class="stat-value">{{ clients | length }}</p>
+    </div>
+    <div class="card" style="padding:16px 24px;min-width:120px;">
+      <p class="stat-label">Active</p>
+      <p class="stat-value" style="color:#15803d;">{{ active | length }}</p>
+    </div>
+    <div class="card" style="padding:16px 24px;min-width:120px;">
+      <p class="stat-label">Pending Onboard</p>
+      <p class="stat-value" style="color:#d97706;">{{ pending | length }}</p>
+    </div>
+    <div class="card" style="padding:16px 24px;min-width:100px;">
+      <p class="stat-label">Growth ($997)</p>
+      <p class="stat-value">{{ growth_count }}</p>
+    </div>
+    <div class="card" style="padding:16px 24px;min-width:100px;">
+      <p class="stat-label">Scale ($1,497)</p>
+      <p class="stat-value">{{ scale_count }}</p>
+    </div>
+    <div class="card" style="padding:16px 24px;min-width:120px;">
+      <p class="stat-label">MRR</p>
+      <p class="stat-value">${{ (growth_count * 997 + scale_count * 1497) | int | string }}</p>
+    </div>
+  </div>
+
+  <!-- Clients Table -->
+  <div class="card">
+    <div class="card-header">
+      <h2>All Retainer Clients</h2>
+      <p>Sorted newest first</p>
+    </div>
+
+    {% if clients %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Business</th>
+            <th>Contact</th>
+            <th>Email</th>
+            <th>Tier</th>
+            <th>Status</th>
+            <th>Ad Account</th>
+            <th>Socials</th>
+            <th>Brand Assets</th>
+            <th>Accepted</th>
+            <th>Onboarded</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in clients %}
+          <tr>
+            <td><strong>{{ c.business_name or "—" }}</strong></td>
+            <td>{{ c.contact_name or "—" }}</td>
+            <td style="color:#6b7280;font-size:12px;">{{ c.email }}</td>
+            <td>
+              {% if c.tier == 'scale' %}
+              <span class="status-pill" style="background:#fce7f3;color:#be185d;">Scale $1,497</span>
+              {% else %}
+              <span class="status-pill" style="background:#eff6ff;color:#1d4ed8;">Growth $997</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if c.status == 'active' %}
+              <span class="status-pill status-completed">Active</span>
+              {% else %}
+              <span class="status-pill status-pending_review">Pending onboard</span>
+              {% endif %}
+            </td>
+            <td style="font-size:12px;color:#6b7280;">{{ c.ad_account_email or "—" }}</td>
+            <td style="font-size:12px;color:#6b7280;max-width:160px;white-space:normal;line-height:1.4;">
+              {{ c.social_logins or "—" }}
+            </td>
+            <td style="font-size:12px;color:#6b7280;max-width:160px;white-space:normal;line-height:1.4;">
+              {{ c.brand_assets_note or "—" }}
+            </td>
+            <td style="color:#9ca3af;font-size:12px;">
+              {{ (c.accepted_at or "")[:10] or "—" }}
+            </td>
+            <td style="color:#9ca3af;font-size:12px;">
+              {{ (c.onboarded_at or "")[:10] or "—" }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div style="padding:48px 24px;text-align:center;">
+      <p class="muted">No retainer clients yet. The upsell email goes out automatically when a build goes LIVE.</p>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

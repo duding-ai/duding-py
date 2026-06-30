@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Retainer Onboarding — Duding{% endblock %}
+
+{% block content %}
+<div class="wrap pad" style="max-width:640px;">
+
+  {% if submitted %}
+
+  <div style="text-align:center;padding:48px 0;">
+    <p class="eyebrow">You're in</p>
+    <h1 style="font-size:28px;font-weight:800;margin:0 0 12px;">Onboarding complete.</h1>
+    <p class="muted">I'll reach out within 24 hours to confirm your start date and kick things off. Talk soon.</p>
+    <p style="margin-top:24px;font-size:14px;color:#374151;">— Tommy</p>
+  </div>
+
+  {% else %}
+
+  <p class="eyebrow">Retainer onboarding</p>
+  <h1 style="font-size:26px;font-weight:800;margin:0 0 6px;">
+    Welcome, {{ rc.contact_name or rc.email }}.
+  </h1>
+  <p class="muted" style="margin-bottom:28px;">
+    You signed up for the <strong>{{ tier_info.label }}</strong> ({{ tier_info.price }}).
+    Fill out the info below so I can get started right away.
+  </p>
+
+  <form method="post" action="/retainer/onboard/{{ rc.build_id }}/{{ rc.tier }}">
+
+    <div style="display:flex;flex-direction:column;gap:20px;">
+
+      <div>
+        <label style="display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;color:#374151;">
+          Ad Account Email
+        </label>
+        <input
+          type="email"
+          name="ad_account_email"
+          placeholder="email@yourco.com"
+          value="{{ rc.ad_account_email or '' }}"
+          style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;"
+        />
+        <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
+          The email address linked to your Google Ads and/or Meta Business account. I'll request access — you'll get an invite to approve.
+        </p>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;color:#374151;">
+          Social Media Handles / Page Links
+        </label>
+        <textarea
+          name="social_logins"
+          rows="3"
+          placeholder="Instagram: @yourhandle&#10;Facebook: facebook.com/yourpage&#10;Google Business: link or business name"
+          style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;"
+        >{{ rc.social_logins or '' }}</textarea>
+        <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
+          I'll request admin access via each platform. You won't need to share passwords.
+        </p>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;color:#374151;">
+          Brand Assets
+        </label>
+        <textarea
+          name="brand_assets_note"
+          rows="3"
+          placeholder="Logo files: Google Drive link or Dropbox&#10;Brand colors: #hex&#10;Fonts: Inter, Helvetica&#10;Any existing brand guide or notes"
+          style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical;"
+        >{{ rc.brand_assets_note or '' }}</textarea>
+        <p style="font-size:12px;color:#9ca3af;margin-top:4px;">
+          Drop a Drive/Dropbox link to your logo files and any brand guidelines. If you don't have any, just say so — I'll work with what you have.
+        </p>
+      </div>
+
+    </div>
+
+    <div style="margin-top:28px;">
+      <button
+        type="submit"
+        class="btn btn-primary btn-wide"
+        style="font-size:15px;padding:13px 28px;"
+      >
+        Submit &amp; Start Onboarding &rarr;
+      </button>
+    </div>
+
+  </form>
+
+  {% endif %}
+
+</div>
+{% endblock %}
