@@ -9,7 +9,7 @@ SECTION 5  Build status: Day 3 / 7 / 10 emails
 SECTION 6  Testimonial & referral: 7 days post-completion
 SECTION 7  Upsell: 30 / 37 days post-live
 SECTION 8  Content: Instagram captions, video hooks, content angles
-SECTION 9  SMS alerts: email-to-SMS for key events
+SECTION 9  Domain watcher: Resend verification loop (self-removes when live)
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ from models.referral import Referral
 TOMMY_EMAIL = "tomcampos1@aol.com"
 DAILY_SEND_LIMIT = 50
 CALENDLY_LINK = os.getenv("CALENDLY_LINK", "https://calendly.com/duding")
+RESEND_DOMAIN_ID = os.getenv("RESEND_DOMAIN_ID", "3f79c9ae-63d8-495c-a79c-9fc4f05f88c2")
 
 TRADES: List[str] = [
     "plumber", "HVAC contractor", "electrician", "roofing contractor",
@@ -1196,6 +1197,74 @@ def job_monday_content() -> None:
         db.close()
 
 
+# ── SECTION 9 — Resend domain verification watcher ───────────────────────────
+
+_domain_verified = False  # module-level flag; set True once confirmed
+
+
+def job_check_resend_domain_verification() -> None:
+    """Poll Resend every 15 min until duding.ai is verified, then notify Tommy and self-remove."""
+    global _domain_verified
+    if _domain_verified:
+        return
+
+    key = os.getenv("RESEND_API_KEY", "").strip()
+    if not key or not RESEND_DOMAIN_ID:
+        return
+
+    import httpx
+    try:
+        r = httpx.get(
+            f"https://api.resend.com/domains/{RESEND_DOMAIN_ID}",
+            headers={"Authorization": f"Bearer {key}"},
+            timeout=10,
+        )
+        if r.status_code != 200:
+            _log(f"[domain-check] Resend API error {r.status_code}: {r.text[:120]}")
+            return
+
+        data = r.json()
+        status = data.get("status", "unknown")
+        records = data.get("records", [])
+
+        verified_names = [rec.get("record", "") for rec in records if rec.get("status") == "verified"]
+        pending_names  = [rec.get("record", "") for rec in records if rec.get("status") != "verified"]
+
+        _log(f"[domain-check] status={status} ✓={verified_names} pending={pending_names}")
+
+        if status == "verified":
+            _domain_verified = True
+            _log("[domain-check] ✓ duding.ai VERIFIED — outreach emails will now deliver")
+            _send(
+                TOMMY_EMAIL,
+                "duding.ai domain VERIFIED — outreach is live",
+                (
+                    "Good news — the duding.ai domain is now verified on Resend.\n\n"
+                    "All outreach emails will now deliver from duding@duding.ai.\n\n"
+                    f"Verified records: {', '.join(verified_names) or 'all'}\n\n"
+                    "The engine will resume normal send operations on its next cycle.\n\n"
+                    "— Duding Engine"
+                ),
+                from_name="Duding",
+            )
+            if _scheduler and _scheduler.running:
+                try:
+                    _scheduler.remove_job("domain_verify_check")
+                except Exception:
+                    pass
+        else:
+            # Re-trigger verification so Resend re-checks DNS
+            rv = httpx.post(
+                f"https://api.resend.com/domains/{RESEND_DOMAIN_ID}/verify",
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=10,
+            )
+            _log(f"[domain-check] re-verify triggered ({rv.status_code}) — still pending: {pending_names}")
+
+    except Exception as exc:
+        _log(f"[domain-check] ERROR: {exc}")
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def start_engine() -> None:
@@ -1263,12 +1332,20 @@ def start_engine() -> None:
         id="monday_content",
         max_instances=1, misfire_grace_time=3600,
     )
+    # SECTION 9 — Resend domain verification watcher (runs until verified, then self-removes)
+    _scheduler.add_job(
+        job_check_resend_domain_verification, "interval", minutes=15,
+        id="domain_verify_check",
+        next_run_time=now + timedelta(seconds=45),
+        max_instances=1, misfire_grace_time=60,
+    )
 
     _scheduler.start()
     _state["running"] = True
     _log(
         "Engine started — "
-        "find@+2m, reply-check@+3m, send@+5m, followups@+10m, build-check@+15m"
+        "find@+2m, reply-check@+3m, send@+5m, followups@+10m, build-check@+15m, "
+        "domain-verify@+45s (every 15m until verified)"
     )
 
 
