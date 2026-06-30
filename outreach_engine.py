@@ -1232,17 +1232,20 @@ def job_check_resend_domain_verification() -> None:
 
         _log(f"[domain-check] status={status} ✓={verified_names} pending={pending_names}")
 
-        if status == "verified":
+        sending_enabled = data.get("capabilities", {}).get("sending") == "enabled"
+        if status == "verified" or sending_enabled:
             _domain_verified = True
-            _log("[domain-check] ✓ duding.ai VERIFIED — outreach emails will now deliver")
+            _log("[domain-check] ✓ duding.ai sending ENABLED — outreach emails will now deliver")
             _send(
                 TOMMY_EMAIL,
-                "duding.ai domain VERIFIED — outreach is live",
+                "duding.ai domain sending enabled — outreach is live",
                 (
-                    "Good news — the duding.ai domain is now verified on Resend.\n\n"
+                    "Good news — the duding.ai domain can now send email via Resend.\n\n"
+                    f"Domain status: {status}\n"
+                    f"Sending capability: {data.get('capabilities', {}).get('sending', 'unknown')}\n"
+                    f"Verified records: {', '.join(verified_names) or 'all'}\n"
+                    f"Still pending: {', '.join(pending_names) or 'none'}\n\n"
                     "All outreach emails will now deliver from duding@duding.ai.\n\n"
-                    f"Verified records: {', '.join(verified_names) or 'all'}\n\n"
-                    "The engine will resume normal send operations on its next cycle.\n\n"
                     "— Duding Engine"
                 ),
                 from_name="Duding",

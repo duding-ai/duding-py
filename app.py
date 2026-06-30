@@ -432,31 +432,90 @@ def _clean_business_name(raw: str) -> str:
 
 
 def build_outreach_email(profile: dict, target: str) -> Tuple[str, str]:
-    raw_name = profile.get("business_name") or profile.get("website_title") or target
+    raw_name      = profile.get("business_name") or profile.get("website_title") or target
     business_name = _clean_business_name(raw_name)
-    description = (
-        profile.get("website_description") or profile.get("industry") or "what you do"
-    )
-    services = profile.get("services_found") or []
-    if services:
-        service = services[0]
-        lever = (
-            f"tighten your first-response and follow-up for {service.lower()} inquiries"
+    industry      = profile.get("industry") or ""
+    services      = profile.get("services_found") or []
+    scraped       = bool(profile.get("scraped"))
+    phones        = (profile.get("phones_found") or []) if scraped else None
+    has_form      = bool(profile.get("forms_found")) if scraped else None
+    socials       = profile.get("social_links") or []
+
+    # Choose opener based on real signals — never quote their tagline back at them.
+    # Priority: site-specific observations → trade pain point → generic.
+    if scraped and not has_form and not phones:
+        opener = (
+            "Took a look at your site and couldn't find a way for someone to request a quote "
+            "or leave their number. Most leads won't reach out cold — they scan the site, "
+            "don't see an easy entry point, and move on to the next result."
+        )
+    elif scraped and not has_form and phones:
+        opener = (
+            "Looked at your site — the only way to reach you is to call. "
+            "A lot of people won't dial cold; they'll bounce and book whoever has a form. "
+            "A short quote request with an instant text-back usually recovers those leads."
+        )
+    elif industry == "HVAC":
+        opener = (
+            "Most HVAC companies lose the summer spike leads to whoever texts back first. "
+            "A homeowner calls 3 companies and books the one that responds within 5 minutes "
+            "— the others never hear back."
+        )
+    elif industry == "Roofing":
+        opener = (
+            "After a storm rolls through, there's usually a 10–14 day window where every "
+            "homeowner in the area is actively looking. Most roofing companies miss half those "
+            "leads to slow follow-up — they respond the next day and the job is already gone."
+        )
+    elif industry == "Plumbing":
+        opener = (
+            "Emergency plumbing calls go to whoever texts back first, not whoever has the best "
+            "reviews. Most plumbing businesses I talk to are losing 2–3 jobs a week to that "
+            "5-minute response gap."
+        )
+    elif industry == "Electrical":
+        opener = (
+            "Electrical leads almost always call 2–3 contractors and hire the first to respond. "
+            "The quote barely matters if you're third to call back."
+        )
+    elif industry in ("Cleaning", "Landscaping", "Pest Control"):
+        opener = (
+            "Recurring-service businesses win on follow-up speed more than price. "
+            "The customer who requests a cleaning quote on Monday has usually booked someone "
+            "by Tuesday morning — whoever followed up first."
+        )
+    elif scraped and socials and not has_form:
+        platform = next(
+            (s for s in ("Instagram", "Facebook", "TikTok")
+             if s.lower() in " ".join(socials).lower()),
+            "social media",
+        )
+        opener = (
+            f"Noticed you're active on {platform}. "
+            "The content is doing the awareness work — but there's usually a gap between "
+            "someone seeing a post and actually becoming a lead. "
+            "A short intake form with an instant text-back closes it."
         )
     else:
-        lever = "tighten your first-response and follow-up so more inquiries turn into booked conversations"
+        svc = services[0].lower() if services else "inbound"
+        opener = (
+            f"Most service businesses lose 30–40% of {svc} leads to slow follow-up — "
+            "someone calls or submits a form, doesn't hear back within the hour, "
+            "and books the competitor who responded first."
+        )
 
-    contact_name = "there"
-    subject = f"{business_name} — quick question"
+    service_str = services[0].lower() if services else "service"
+    lever = f"turn more {service_str} inquiries into booked jobs"
+
+    subject = f"Quick question — {business_name}"
     body = (
-        f"Hi {contact_name},\n\n"
-        f"I came across {business_name} and noticed you help people with {description}. "
-        f"One lever that often moves the needle for companies like yours is {lever}.\n\n"
-        "I help service businesses install simple systems that capture more leads, respond faster, and follow up automatically so those conversations actually convert.\n\n"
-        f"Would it be worth a quick 10-minute conversation this week to see if there's a fit for {business_name}?\n\n"
-        "Thanks for your time,\n"
-        "Tommy\n\n"
-        "P.S. I only take a limited number of installs per month — if you want a slot this month, sooner is better."
+        f"Hi there,\n\n"
+        f"{opener}\n\n"
+        f"I build lead intake systems for service businesses — the kind that text a new lead "
+        f"back within 60 seconds, run a follow-up sequence for 7 days, and make sure no call "
+        f"goes unanswered. Built to {lever}.\n\n"
+        f"Worth a quick 10-minute call this week to see if it makes sense for {business_name}?\n\n"
+        f"Tommy"
     )
     return subject, body
 
