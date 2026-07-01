@@ -1,0 +1,13 @@
+{
+  "run_id": 9,
+  "lead_id": 35,
+  "started": "2025-11-04T22:00:54+00:00",
+  "finished": "2025-11-04T22:00:55+00:00",
+  "status": "ok",
+  "steps": {
+    "validate": "ok",
+    "artifacts": "ok",
+    "email": "ok",
+    "crm": "ok"
+  }
+}

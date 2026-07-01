@@ -75,6 +75,17 @@ async def health():
     return {"status": "ok"}
 
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://getchkd.app", "https://www.getchkd.app",
+                   "https://dancing-elf-e111e7.netlify.app"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "CHKD-Client-Secret"],
+    max_age=3600,
+)
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET", "CHANGE_ME_FOR_PROD"),
@@ -3165,10 +3176,4 @@ async def social_intel_report(
 
 
 # ---------------------------------------------------------------------
-# HEALTH
-# ---------------------------------------------------------------------
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+# (health route defined at top of file)

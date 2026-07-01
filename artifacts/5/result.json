@@ -1,0 +1,18 @@
+{
+  "lead_email": "duding@duding.ai",
+  "plan": [
+    {
+      "step": "ideation",
+      "status": "ok"
+    },
+    {
+      "step": "scripting",
+      "status": "ok"
+    },
+    {
+      "step": "distribution",
+      "status": "ok"
+    }
+  ],
+  "note": "Demo workflow completed."
+}
