@@ -1,33 +1,5 @@
-# nixpacks.toml — Railway build config for Playwright/Chromium support
-
-[phases.setup]
-nixPkgs = [
-  "chromium",
-  "nss",
-  "nspr",
-  "xorg.libX11",
-  "xorg.libXcomposite",
-  "xorg.libXdamage",
-  "xorg.libXext",
-  "xorg.libXfixes",
-  "xorg.libXrandr",
-  "xorg.libxcb",
-  "mesa",
-  "expat",
-  "dbus",
-  "cups",
-  "libdrm",
-  "at-spi2-core",
-  "gtk3",
-  "pango",
-  "cairo",
-  "glib",
-  "alsa-lib",
-  "fontconfig",
-  "freetype",
-  "xorg.libXtst",
-  "libgbm"
-]
+# nixpacks.toml — Railway build config
+# Playwright/Chromium nix packages disabled — content rendering uses a separate worker
 
 [phases.install]
 cmds = ["pip install -r requirements.txt"]
