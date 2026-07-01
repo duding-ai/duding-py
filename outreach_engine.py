@@ -1268,7 +1268,7 @@ def job_check_resend_domain_verification() -> None:
         _log(f"[domain-check] ERROR: {exc}")
 
 
-# ── CHKD client job ───────────────────────────────────────────────────────────
+# ── CHKD client jobs ──────────────────────────────────────────────────────────
 
 def job_chkd_daily() -> None:
     """CHKD client — Day-3 re-engagement and Day-7 streak emails (daily 8am UTC)."""
@@ -1278,6 +1278,30 @@ def job_chkd_daily() -> None:
         _log(f"[chkd] daily sweep: {counts}")
     except Exception as exc:
         _log(f"[chkd] ERROR: {exc}")
+
+
+def job_social_intelligence() -> None:
+    """CHKD Social Intelligence — scrape competitors + Claude analysis (Monday 9am UTC)."""
+    from db import SessionLocal
+    from models.client import Client
+    from services.social_intelligence import run_weekly_intelligence
+
+    db = SessionLocal()
+    try:
+        chkd = db.query(Client).filter(Client.domain == "getchkd.app").first()
+        if not chkd:
+            _log("[social_intel] CHKD client record not found — skipping")
+            return
+        client_id = chkd.id
+    finally:
+        db.close()
+
+    try:
+        result = run_weekly_intelligence(client_id)
+        _log(f"[social_intel] Weekly report complete — {len(result.get('top_hooks', []))} hooks, "
+             f"{len(result.get('content_ideas', []))} content ideas")
+    except Exception as exc:
+        _log(f"[social_intel] ERROR: {exc}")
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -1361,13 +1385,21 @@ def start_engine() -> None:
         id="chkd_daily",
         max_instances=1, misfire_grace_time=3600,
     )
+    # CHKD Social Intelligence — Monday 9am UTC
+    _scheduler.add_job(
+        job_social_intelligence,
+        CronTrigger(day_of_week="mon", hour=9, minute=0, timezone="UTC"),
+        id="social_intelligence",
+        max_instances=1, misfire_grace_time=3600,
+    )
 
     _scheduler.start()
     _state["running"] = True
     _log(
         "Engine started — "
         "find@+2m, reply-check@+3m, send@+5m, followups@+10m, build-check@+15m, "
-        "domain-verify@+45s (every 15m until verified), chkd-daily@08:00UTC"
+        "domain-verify@+45s (every 15m until verified), chkd-daily@08:00UTC, "
+        "social-intel@Mon09:00UTC"
     )
 
 

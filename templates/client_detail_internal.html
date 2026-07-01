@@ -1,6 +1,27 @@
 {% extends "base.html" %}
 {% block title %}{{ client.name }} — Duding{% endblock %}
 
+{% block head_extra %}
+<style>
+  .tab-bar        { display:flex; gap:2px; border-bottom:2px solid #e5e7eb; margin-bottom:28px; }
+  .tab-btn        { padding:10px 20px; border:none; background:none; cursor:pointer; font-size:14px; font-weight:600; color:#6b7280; border-bottom:2px solid transparent; margin-bottom:-2px; }
+  .tab-btn.active { color:#111827; border-bottom-color:#111827; }
+  .tab-panel      { display:none; }
+  .tab-panel.active { display:block; }
+
+  .hook-card      { background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:14px 16px; font-size:14px; font-style:italic; color:#374151; line-height:1.5; }
+  .theme-card     { border:1px solid #e5e7eb; border-radius:8px; padding:16px; }
+  .angle-card     { border:1px solid #e5e7eb; border-radius:8px; padding:16px; }
+  .idea-card      { border:1px solid #e5e7eb; border-radius:8px; padding:16px; }
+  .power-tag      { display:inline-block; background:#f3f4f6; border:1px solid #e5e7eb; border-radius:20px; padding:5px 12px; font-size:12px; font-weight:600; color:#374151; margin:3px; }
+  .grid-2         { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .grid-3         { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }
+  .section-head   { font-size:15px; font-weight:700; margin:0 0 14px; color:#111827; }
+  .muted-sm       { font-size:12px; color:#6b7280; }
+  .card-body      { padding:20px 24px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <section class="wrap pad outreach-page">
 
@@ -21,134 +42,284 @@
     </div>
   </header>
 
-  {# ── Stats row ── #}
-  <div class="admin-stat-row" style="margin-bottom:32px;">
-    <article class="admin-stat-card">
-      <p class="stat-label">Total users</p>
-      <p class="stat-value">{{ stats.total }}</p>
-    </article>
-    <article class="admin-stat-card stat-hot">
-      <p class="stat-label">7-day streaks</p>
-      <p class="stat-value">{{ stats.streak7_count }}</p>
-    </article>
-    <article class="admin-stat-card stat-cold" style="{% if stats.at_risk_count > 0 %}border-color:#f59e0b;{% endif %}">
-      <p class="stat-label" {% if stats.at_risk_count > 0 %}style="color:#92400e;"{% endif %}>At-risk (3d no login)</p>
-      <p class="stat-value" {% if stats.at_risk_count > 0 %}style="color:#92400e;"{% endif %}>{{ stats.at_risk_count }}</p>
-    </article>
+  {# ── Tab bar ── #}
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('overview', this)">Overview</button>
+    <button class="tab-btn" onclick="switchTab('social-intel', this)">Social Intelligence</button>
   </div>
 
-  {# ── Two-column: streaks + at-risk ── #}
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px;">
+  {# ═══════════════════════════════════════════════════════════════════════════
+     TAB 1 — OVERVIEW
+  ════════════════════════════════════════════════════════════════════════════ #}
+  <div id="tab-overview" class="tab-panel active">
 
-    <div class="card" style="padding:20px 24px;">
-      <h2 style="font-size:15px;font-weight:700;margin:0 0 14px;">Active 7-Day Streaks</h2>
-      {% if stats.streaks %}
-      <table style="width:100%;font-size:13px;border-collapse:collapse;">
-        <thead>
-          <tr style="border-bottom:1px solid #e5e7eb;">
-            <th style="text-align:left;padding:6px 0;color:#6b7280;font-weight:500;">Name</th>
-            <th style="text-align:left;padding:6px 0;color:#6b7280;font-weight:500;">Email</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for u in stats.streaks %}
-          <tr style="border-bottom:1px solid #f3f4f6;">
-            <td style="padding:8px 0;font-weight:600;">{{ u.name or '—' }}</td>
-            <td style="padding:8px 0;color:#6b7280;">{{ u.email }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <p class="muted" style="margin:0;">No active 7-day streaks right now.</p>
-      {% endif %}
+    {# Stats row #}
+    <div class="admin-stat-row" style="margin-bottom:32px;">
+      <article class="admin-stat-card">
+        <p class="stat-label">Total users</p>
+        <p class="stat-value">{{ stats.total }}</p>
+      </article>
+      <article class="admin-stat-card stat-hot">
+        <p class="stat-label">7-day streaks</p>
+        <p class="stat-value">{{ stats.streak7_count }}</p>
+      </article>
+      <article class="admin-stat-card stat-cold" style="{% if stats.at_risk_count > 0 %}border-color:#f59e0b;{% endif %}">
+        <p class="stat-label" {% if stats.at_risk_count > 0 %}style="color:#92400e;"{% endif %}>At-risk (3d no login)</p>
+        <p class="stat-value" {% if stats.at_risk_count > 0 %}style="color:#92400e;"{% endif %}>{{ stats.at_risk_count }}</p>
+      </article>
     </div>
 
-    <div class="card" style="padding:20px 24px;">
-      <h2 style="font-size:15px;font-weight:700;margin:0 0 14px;">
-        At-Risk Users
-        <span style="color:#92400e;font-size:12px;font-weight:500;">(no check-in 3+ days)</span>
-      </h2>
-      {% if stats.at_risk %}
-      <table style="width:100%;font-size:13px;border-collapse:collapse;">
-        <thead>
-          <tr style="border-bottom:1px solid #e5e7eb;">
+    {# Two-column: streaks + at-risk #}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:32px;">
+      <div class="card card-body">
+        <h2 class="section-head">Active 7-Day Streaks</h2>
+        {% if stats.streaks %}
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+          <thead><tr style="border-bottom:1px solid #e5e7eb;">
             <th style="text-align:left;padding:6px 0;color:#6b7280;font-weight:500;">Name</th>
             <th style="text-align:left;padding:6px 0;color:#6b7280;font-weight:500;">Email</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for u in stats.at_risk %}
-          <tr style="border-bottom:1px solid #f3f4f6;">
-            <td style="padding:8px 0;font-weight:600;">{{ u.name or '—' }}</td>
-            <td style="padding:8px 0;color:#6b7280;">{{ u.email }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <p class="muted" style="margin:0;">No at-risk users right now.</p>
-      {% endif %}
+          </tr></thead>
+          <tbody>
+            {% for u in stats.streaks %}
+            <tr style="border-bottom:1px solid #f3f4f6;">
+              <td style="padding:8px 0;font-weight:600;">{{ u.name or '—' }}</td>
+              <td style="padding:8px 0;color:#6b7280;">{{ u.email }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="muted" style="margin:0;">No active 7-day streaks right now.</p>
+        {% endif %}
+      </div>
+
+      <div class="card card-body">
+        <h2 class="section-head">At-Risk <span style="color:#92400e;font-size:12px;font-weight:500;">(no check-in 3+ days)</span></h2>
+        {% if stats.at_risk %}
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+          <thead><tr style="border-bottom:1px solid #e5e7eb;">
+            <th style="text-align:left;padding:6px 0;color:#6b7280;font-weight:500;">Name</th>
+            <th style="text-align:left;padding:6px 0;color:#6b7280;font-weight:500;">Email</th>
+          </tr></thead>
+          <tbody>
+            {% for u in stats.at_risk %}
+            <tr style="border-bottom:1px solid #f3f4f6;">
+              <td style="padding:8px 0;font-weight:600;">{{ u.name or '—' }}</td>
+              <td style="padding:8px 0;color:#6b7280;">{{ u.email }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="muted" style="margin:0;">No at-risk users right now.</p>
+        {% endif %}
+      </div>
     </div>
 
-  </div>
-
-  {# ── Email log ── #}
-  <div class="card" style="padding:20px 24px;">
-    <h2 style="font-size:15px;font-weight:700;margin:0 0 14px;">Recent Emails Sent</h2>
-    {% if recent_emails %}
-    <table style="width:100%;font-size:13px;border-collapse:collapse;">
-      <thead>
-        <tr style="border-bottom:1px solid #e5e7eb;">
+    {# Email log #}
+    <div class="card card-body">
+      <h2 class="section-head">Recent Emails Sent</h2>
+      {% if recent_emails %}
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <thead><tr style="border-bottom:1px solid #e5e7eb;">
           <th style="text-align:left;padding:6px 8px 6px 0;color:#6b7280;font-weight:500;">Type</th>
           <th style="text-align:left;padding:6px 8px;color:#6b7280;font-weight:500;">Email</th>
           <th style="text-align:left;padding:6px 0;color:#6b7280;font-weight:500;">Sent</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for e in recent_emails %}
-        <tr style="border-bottom:1px solid #f3f4f6;">
-          <td style="padding:8px 8px 8px 0;">
-            {% if e.email_type == 'welcome' %}
-            <span class="status-pill" style="background:#d1fae5;color:#065f46;">welcome</span>
-            {% elif e.email_type == 'day3_reengagement' %}
-            <span class="status-pill" style="background:#fef3c7;color:#92400e;">re-engage</span>
-            {% elif e.email_type == 'day7_streak' %}
-            <span class="status-pill" style="background:#dbeafe;color:#1e40af;">7-day streak</span>
-            {% else %}
-            <span class="status-pill">{{ e.email_type }}</span>
-            {% endif %}
-          </td>
-          <td style="padding:8px;color:#374151;">{{ e.email }}</td>
-          <td style="padding:8px 0;color:#6b7280;white-space:nowrap;">
-            {{ e.sent_at.strftime('%b %d, %H:%M') if e.sent_at else '—' }}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p class="muted" style="margin:0;">No emails sent yet.</p>
-    {% endif %}
-  </div>
+        </tr></thead>
+        <tbody>
+          {% for e in recent_emails %}
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px 8px 8px 0;">
+              {% if e.email_type == 'welcome' %}
+              <span class="status-pill" style="background:#d1fae5;color:#065f46;">welcome</span>
+              {% elif e.email_type == 'day3_reengagement' %}
+              <span class="status-pill" style="background:#fef3c7;color:#92400e;">re-engage</span>
+              {% elif e.email_type == 'day7_streak' %}
+              <span class="status-pill" style="background:#dbeafe;color:#1e40af;">7-day streak</span>
+              {% else %}
+              <span class="status-pill">{{ e.email_type }}</span>
+              {% endif %}
+            </td>
+            <td style="padding:8px;color:#374151;">{{ e.email }}</td>
+            <td style="padding:8px 0;color:#6b7280;white-space:nowrap;">
+              {{ e.sent_at.strftime('%b %d, %H:%M') if e.sent_at else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted" style="margin:0;">No emails sent yet.</p>
+      {% endif %}
+    </div>
 
-  {# ── Webhook setup (collapsed) ── #}
-  <details style="margin-top:24px;">
-    <summary style="cursor:pointer;font-size:13px;color:#6b7280;font-weight:600;padding:8px 0;">
-      Supabase webhook setup
-    </summary>
-    <div class="card" style="margin-top:12px;padding:20px 24px;font-size:13px;line-height:1.7;">
-      <p style="margin:0 0 12px;"><strong>Env vars (Railway):</strong></p>
-      <pre style="background:#f3f4f6;padding:12px;border-radius:6px;overflow-x:auto;margin:0 0 16px;">SUPABASE_URL=https://vmpoexkcdcsbufqxwdwe.supabase.co
+    {# Supabase setup (collapsed) #}
+    <details style="margin-top:24px;">
+      <summary style="cursor:pointer;font-size:13px;color:#6b7280;font-weight:600;padding:8px 0;">
+        Supabase webhook setup
+      </summary>
+      <div class="card" style="margin-top:12px;padding:20px 24px;font-size:13px;line-height:1.7;">
+        <p style="margin:0 0 12px;"><strong>Env vars (Railway):</strong></p>
+        <pre style="background:#f3f4f6;padding:12px;border-radius:6px;overflow-x:auto;margin:0 0 16px;">SUPABASE_URL=https://vmpoexkcdcsbufqxwdwe.supabase.co
 SUPABASE_SERVICE_KEY=&lt;service role key&gt;
 CHKD_WEBHOOK_SECRET=&lt;shared secret&gt;</pre>
-      <p style="margin:0 0 8px;"><strong>Supabase webhook:</strong> Database → Webhooks → profiles → INSERT</p>
-      <p style="margin:0;">
-        URL: <code>https://duding.ai/chkd/webhook/profile</code><br>
-        Header: <code>Authorization: Bearer &lt;CHKD_WEBHOOK_SECRET&gt;</code>
+        <p style="margin:0;">Webhook: Supabase → Database → Webhooks → profiles → INSERT<br>
+        URL: <code>https://duding.ai/chkd/webhook/profile</code></p>
+      </div>
+    </details>
+
+  </div>
+
+  {# ═══════════════════════════════════════════════════════════════════════════
+     TAB 2 — SOCIAL INTELLIGENCE
+  ════════════════════════════════════════════════════════════════════════════ #}
+  <div id="tab-social-intel" class="tab-panel">
+
+    {# Header bar: week label + run button + history #}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+      <div>
+        {% if latest_report %}
+        <p style="margin:0;font-size:13px;font-weight:600;color:#111827;">
+          Week of {{ latest_report.week_of.strftime('%b %d, %Y') }}
+        </p>
+        <p class="muted-sm" style="margin:2px 0 0;">
+          {{ report_history | length }} report{{ 's' if report_history | length != 1 }} on file
+          {% if latest_analysis and latest_analysis.get('_stub') %}
+          &nbsp;·&nbsp; <span style="color:#f59e0b;">⚠ Stub data — set ANTHROPIC_API_KEY for live Claude analysis</span>
+          {% endif %}
+        </p>
+        {% else %}
+        <p style="margin:0;font-size:13px;color:#6b7280;">No reports yet — run the first one below.</p>
+        {% endif %}
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        {% if report_history %}
+        <div class="muted-sm" style="text-align:right;">
+          {% for r in report_history %}
+          <a href="/dashboard/clients/{{ client.id }}/social-intelligence/{{ r.id }}"
+             style="display:inline-block;margin:2px 3px;padding:3px 8px;background:#f3f4f6;border-radius:4px;font-size:11px;color:#374151;text-decoration:none;">
+            {{ r.week_of.strftime('%b %d') }}
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <form method="POST" action="/dashboard/clients/{{ client.id }}/social-intelligence/run">
+          <button type="submit" class="btn btn-primary" style="white-space:nowrap;">
+            ▶ Run Now
+          </button>
+        </form>
+      </div>
+    </div>
+
+    {% if latest_analysis %}
+
+    {# ── TOP HOOKS ── #}
+    <div class="card card-body" style="margin-bottom:20px;">
+      <h2 class="section-head">Top Hooks This Week</h2>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        {% for hook in latest_analysis.get('top_hooks', []) %}
+        <div class="hook-card">"{{ hook }}"</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# ── WINNING THEMES + AD ANGLES (side by side) ── #}
+    <div class="grid-2" style="margin-bottom:20px;">
+
+      <div class="card card-body">
+        <h2 class="section-head">Winning Themes</h2>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          {% for t in latest_analysis.get('winning_themes', []) %}
+          <div class="theme-card">
+            <p style="margin:0 0 6px;font-weight:700;font-size:14px;color:#111827;">{{ t.theme }}</p>
+            <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.5;">{{ t.why }}</p>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="card card-body">
+        <h2 class="section-head">Ad Angles</h2>
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          {% for a in latest_analysis.get('ad_angles', []) %}
+          <div class="angle-card">
+            <p style="margin:0 0 6px;font-weight:700;font-size:14px;color:#111827;">{{ a.headline }}</p>
+            <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.5;font-style:italic;">"{{ a.first_line }}"</p>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+    </div>
+
+    {# ── CONTENT IDEAS ── #}
+    <div class="card card-body" style="margin-bottom:20px;">
+      <h2 class="section-head">Content Ideas — Ready to Film</h2>
+      <div class="grid-2" style="gap:14px;">
+        {% for idea in latest_analysis.get('content_ideas', []) %}
+        <div class="idea-card">
+          <p style="margin:0 0 10px;font-weight:700;font-size:14px;color:#111827;">"{{ idea.hook }}"</p>
+          <ul style="margin:0;padding-left:18px;font-size:13px;color:#6b7280;line-height:1.8;">
+            {% for step in idea.get('structure', []) %}
+            <li>{{ step }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {# ── POWER WORDS ── #}
+    <div class="card card-body">
+      <h2 class="section-head">Power Words</h2>
+      <p class="muted-sm" style="margin:0 0 12px;">Words &amp; phrases real people use in comments about discipline, accountability, and streaks.</p>
+      <div>
+        {% for word in latest_analysis.get('power_words', []) %}
+        <span class="power-tag">{{ word }}</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% else %}
+
+    <div class="card" style="padding:48px;text-align:center;">
+      <p style="font-size:18px;font-weight:700;margin:0 0 8px;">No intelligence report yet.</p>
+      <p class="muted" style="margin:0 0 20px;">Click "Run Now" to scrape competitors and generate this week's insights.</p>
+      <p class="muted-sm" style="margin:0;">
+        Set <code>ANTHROPIC_API_KEY</code> on Railway for live Claude analysis.<br>
+        Without it, the first run uses high-quality seed data so you can see the full report format.
       </p>
     </div>
-  </details>
+
+    {% endif %}
+
+  </div>
 
 </section>
+
+<script>
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+
+// Auto-open the social intel tab if redirected back from a manual run
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('tab') === 'social-intel') {
+    const btn = document.querySelector('[onclick*="social-intel"]');
+    if (btn) btn.click();
+    if (params.get('running') === '1') {
+      const banner = document.createElement('div');
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#111827;color:#fff;text-align:center;padding:10px;font-size:13px;font-weight:600;z-index:9999;';
+      banner.textContent = 'Running Social Intelligence report in background — refresh in ~30 seconds to see results.';
+      document.body.prepend(banner);
+      setTimeout(() => banner.remove(), 8000);
+    }
+  }
+})();
+</script>
+
 {% endblock %}

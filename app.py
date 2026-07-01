@@ -56,6 +56,7 @@ from models.client_draft import ClientDraft
 from models.retainer_client import RetainerClient
 from models.chkd_email import ChkdEmail
 from models.client import Client
+from models.social_intelligence_report import SocialIntelligenceReport
 
 from schemas import LeadCreate, LeadRead, LeadEventRead
 
@@ -2779,9 +2780,28 @@ async def client_detail(request: Request, client_id: int, db: Session = Depends(
 
     if client.type == "internal":
         from services.chkd import get_chkd_stats
+        import json as _json
         ctx["stats"] = get_chkd_stats()
         ctx["recent_emails"] = (
             db.query(ChkdEmail).order_by(ChkdEmail.sent_at.desc()).limit(50).all()
+        )
+        # Latest social intelligence report
+        latest_report = (
+            db.query(SocialIntelligenceReport)
+            .filter(SocialIntelligenceReport.client_id == client.id)
+            .order_by(SocialIntelligenceReport.week_of.desc())
+            .first()
+        )
+        ctx["latest_report"] = latest_report
+        ctx["latest_analysis"] = (
+            _json.loads(latest_report.analysis) if latest_report and latest_report.analysis else None
+        )
+        ctx["report_history"] = (
+            db.query(SocialIntelligenceReport)
+            .filter(SocialIntelligenceReport.client_id == client.id)
+            .order_by(SocialIntelligenceReport.week_of.desc())
+            .limit(8)
+            .all()
         )
         return templates.TemplateResponse("client_detail_internal.html", ctx)
 
@@ -2805,6 +2825,68 @@ async def client_detail(request: Request, client_id: int, db: Session = Depends(
         return templates.TemplateResponse("client_detail_retainer.html", ctx)
 
     raise HTTPException(status_code=400, detail=f"Unknown client type: {client.type}")
+
+
+# ---------------------------------------------------------------------
+# SOCIAL INTELLIGENCE — manual run + report view
+# ---------------------------------------------------------------------
+
+@app.post("/dashboard/clients/{client_id}/social-intelligence/run")
+async def social_intel_run(
+    request: Request,
+    client_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404)
+
+    def _run():
+        from services.social_intelligence import run_weekly_intelligence
+        run_weekly_intelligence(client_id)
+
+    background_tasks.add_task(_run)
+    return RedirectResponse(
+        f"/dashboard/clients/{client_id}?tab=social-intel&running=1",
+        status_code=303,
+    )
+
+
+@app.get("/dashboard/clients/{client_id}/social-intelligence/{report_id}", response_class=HTMLResponse)
+async def social_intel_report(
+    request: Request,
+    client_id: int,
+    report_id: int,
+    db: Session = Depends(get_db),
+):
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+
+    import json as _json
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404)
+
+    report = db.query(SocialIntelligenceReport).filter(
+        SocialIntelligenceReport.id        == report_id,
+        SocialIntelligenceReport.client_id == client_id,
+    ).first()
+    if not report:
+        raise HTTPException(status_code=404)
+
+    analysis = _json.loads(report.analysis) if report.analysis else {}
+
+    return templates.TemplateResponse("social_intel_report.html", {
+        "request":  request,
+        "admin_name": ADMIN_NAME,
+        "client":   client,
+        "report":   report,
+        "analysis": analysis,
+    })
 
 
 # ---------------------------------------------------------------------
