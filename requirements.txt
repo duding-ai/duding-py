@@ -45,3 +45,6 @@ aiofiles==24.1.0
 
 # Anthropic SDK (Social Intelligence Agent + future AI features)
 anthropic==0.54.0
+
+# Headless browser rendering (Content Generation Agent)
+playwright==1.49.0

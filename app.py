@@ -57,6 +57,7 @@ from models.retainer_client import RetainerClient
 from models.chkd_email import ChkdEmail
 from models.client import Client
 from models.social_intelligence_report import SocialIntelligenceReport
+from models.content_piece import ContentPiece
 
 from schemas import LeadCreate, LeadRead, LeadEventRead
 
@@ -82,6 +83,10 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 Base.metadata.create_all(bind=engine)
+
+# Custom Jinja2 filters
+import json as _json_mod
+templates.env.filters["fromjson"] = _json_mod.loads
 
 # Inline column migrations — safe to re-run; IF NOT EXISTS is idempotent.
 # Required because create_all() only creates missing tables, not missing columns.
@@ -2803,6 +2808,26 @@ async def client_detail(request: Request, client_id: int, db: Session = Depends(
             .limit(8)
             .all()
         )
+        # Content pieces — this week + recent
+        from datetime import date as _date
+        _today    = datetime.now(timezone.utc).date()
+        _week_of  = _today - timedelta(days=_today.weekday())
+        ctx["content_pieces"] = (
+            db.query(ContentPiece)
+            .filter(ContentPiece.client_id == client.id,
+                    ContentPiece.week_of   == _week_of)
+            .order_by(ContentPiece.id.asc())
+            .all()
+        )
+        ctx["content_week_of"] = _week_of
+        ctx["content_history_weeks"] = (
+            db.query(ContentPiece.week_of)
+            .filter(ContentPiece.client_id == client.id)
+            .group_by(ContentPiece.week_of)
+            .order_by(ContentPiece.week_of.desc())
+            .limit(8)
+            .all()
+        )
         return templates.TemplateResponse("client_detail_internal.html", ctx)
 
     if client.type == "install":
@@ -2825,6 +2850,146 @@ async def client_detail(request: Request, client_id: int, db: Session = Depends(
         return templates.TemplateResponse("client_detail_retainer.html", ctx)
 
     raise HTTPException(status_code=400, detail=f"Unknown client type: {client.type}")
+
+
+# ---------------------------------------------------------------------
+# CONTENT GENERATION — manual run, approve, download
+# ---------------------------------------------------------------------
+
+@app.post("/dashboard/clients/{client_id}/content/run")
+async def content_run(
+    request: Request,
+    client_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404)
+
+    def _run():
+        from services.content_gen import run_weekly_content_gen
+        run_weekly_content_gen(client_id, intel_report=None)
+
+    background_tasks.add_task(_run)
+    return RedirectResponse(
+        f"/dashboard/clients/{client_id}?tab=content&running=1",
+        status_code=303,
+    )
+
+
+@app.get("/dashboard/clients/{client_id}/content/week/{week_of}", response_class=HTMLResponse)
+async def content_week_view(
+    request: Request,
+    client_id: int,
+    week_of: str,
+    db: Session = Depends(get_db),
+):
+    """View content pieces for any historical week."""
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+
+    import json as _json
+    from datetime import date as _date
+
+    try:
+        wdate = _date.fromisoformat(week_of)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid week_of date")
+
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404)
+
+    pieces = (
+        db.query(ContentPiece)
+        .filter(ContentPiece.client_id == client_id,
+                ContentPiece.week_of   == wdate)
+        .order_by(ContentPiece.id.asc())
+        .all()
+    )
+    history_weeks = (
+        db.query(ContentPiece.week_of)
+        .filter(ContentPiece.client_id == client_id)
+        .group_by(ContentPiece.week_of)
+        .order_by(ContentPiece.week_of.desc())
+        .limit(8)
+        .all()
+    )
+
+    return templates.TemplateResponse("content_week.html", {
+        "request":       request,
+        "admin_name":    ADMIN_NAME,
+        "client":        client,
+        "pieces":        pieces,
+        "week_of":       wdate,
+        "history_weeks": history_weeks,
+    })
+
+
+@app.post("/dashboard/clients/{client_id}/content/{piece_id}/approve")
+async def content_approve(
+    request: Request,
+    client_id: int,
+    piece_id: int,
+    db: Session = Depends(get_db),
+):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+
+    piece = db.query(ContentPiece).filter(
+        ContentPiece.id == piece_id,
+        ContentPiece.client_id == client_id,
+    ).first()
+    if not piece:
+        raise HTTPException(status_code=404)
+
+    piece.status = "approved" if piece.status != "approved" else "draft"
+    db.commit()
+    return RedirectResponse(
+        f"/dashboard/clients/{client_id}?tab=content",
+        status_code=303,
+    )
+
+
+@app.get("/dashboard/clients/{client_id}/content/{piece_id}/download")
+async def content_download(
+    request: Request,
+    client_id: int,
+    piece_id: int,
+    slide: int = 0,
+    db: Session = Depends(get_db),
+):
+    """Download a single PNG slide (slide=0 means first/only slide)."""
+    import json as _json
+    from fastapi.responses import Response
+
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+
+    piece = db.query(ContentPiece).filter(
+        ContentPiece.id == piece_id,
+        ContentPiece.client_id == client_id,
+    ).first()
+    if not piece or not piece.image_data:
+        raise HTTPException(status_code=404, detail="No image data")
+
+    images = _json.loads(piece.image_data)
+    if not images or slide >= len(images):
+        raise HTTPException(status_code=404, detail="Slide not found")
+
+    import base64 as _b64
+    png_bytes = _b64.b64decode(images[slide])
+    safe_title = (piece.title or "chkd").replace(" ", "_").lower()[:30]
+    filename   = f"chkd_{safe_title}_slide{slide + 1}.png"
+    return Response(
+        content=png_bytes,
+        media_type="image/png",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ---------------------------------------------------------------------

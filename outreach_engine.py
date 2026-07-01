@@ -1300,8 +1300,35 @@ def job_social_intelligence() -> None:
         result = run_weekly_intelligence(client_id)
         _log(f"[social_intel] Weekly report complete — {len(result.get('top_hooks', []))} hooks, "
              f"{len(result.get('content_ideas', []))} content ideas")
+        # Chain content generation immediately after intel completes
+        job_content_generation(intel_report=result, client_id_override=client_id)
     except Exception as exc:
         _log(f"[social_intel] ERROR: {exc}")
+
+
+def job_content_generation(intel_report: dict = None, client_id_override: int = None) -> None:
+    """CHKD Content Generation — render 10 Instagram graphics (Monday after social intel)."""
+    from db import SessionLocal
+    from models.client import Client
+    from services.content_gen import run_weekly_content_gen
+
+    client_id = client_id_override
+    if not client_id:
+        db = SessionLocal()
+        try:
+            chkd = db.query(Client).filter(Client.domain == "getchkd.app").first()
+            if not chkd:
+                _log("[content_gen] CHKD client not found — skipping")
+                return
+            client_id = chkd.id
+        finally:
+            db.close()
+
+    try:
+        count = run_weekly_content_gen(client_id, intel_report=intel_report)
+        _log(f"[content_gen] {count} content pieces generated")
+    except Exception as exc:
+        _log(f"[content_gen] ERROR: {exc}")
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
