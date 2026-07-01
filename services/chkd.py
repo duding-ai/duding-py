@@ -200,15 +200,20 @@ def build_reengagement_email(name: str) -> Tuple[str, str]:
     return subject, body
 
 
-def build_streak_email(name: str, streak: int = 7) -> Tuple[str, str]:
+def build_streak_email(name: str, streak: int = 7, discord_invite: Optional[str] = None) -> Tuple[str, str]:
     first   = (name or "there").split()[0]
-    subject = f"{streak} days straight — that's real"
+    subject = f"{streak} days straight — you earned this"
+    discord_block = (
+        f"\nYou've also unlocked the CHKD Discord — a private channel for men "
+        f"who actually show up every day.\n\n"
+        f"Your invite (single-use, 7 days): {discord_invite}\n"
+    ) if discord_invite else ""
     body    = (
         f"Hey {first},\n\n"
         f"{streak} days in a row.\n\n"
-        f"That's not motivation — that's discipline. Most people don't make it a week. You did.\n\n"
-        f"Keep going. And if you know someone who needs this, send them the link: {CHKD_APP_URL}\n\n"
-        f"One invite. Costs you nothing. Could actually help them.\n\n"
+        f"That's not motivation — that's discipline. Most people don't make it a week. You did.\n"
+        f"{discord_block}\n"
+        f"Keep the streak alive: {CHKD_APP_URL}\n\n"
         f"Tommy"
     )
     return subject, body
@@ -288,7 +293,13 @@ def run_daily_checks() -> Dict[str, int]:
                 continue
 
             if _has_streak(user_days, 7):
-                subj, body = build_streak_email(name, 7)
+                try:
+                    from services.discord import notify_streak
+                    discord_invite = notify_streak(name, 7)
+                except Exception as _disc_exc:
+                    print(f"[chkd] Discord notify failed: {_disc_exc}")
+                    discord_invite = None
+                subj, body = build_streak_email(name, 7, discord_invite=discord_invite)
                 if send_chkd_email(db, uid, email, "day7_streak", subj, body):
                     counts["day7_streak"] += 1
 

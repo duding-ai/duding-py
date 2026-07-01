@@ -113,6 +113,7 @@ if not engine.url.drivername.startswith("sqlite"):
 CHKD_WEBHOOK_SECRET  = os.getenv("CHKD_WEBHOOK_SECRET", "")
 CHKD_CLIENT_SECRET   = os.getenv("CHKD_CLIENT_SECRET", "")
 CHKD_AI_DAILY_LIMIT  = 20
+CHKD_STREAK_REQUIRED = 7
 
 
 # ---------------------------------------------------------------------
@@ -2748,6 +2749,44 @@ async def chkd_ai_coach(request: Request, db: Session = Depends(get_db)):
         "usage_today": (usage.request_count if usage else 1),
         "limit": CHKD_AI_DAILY_LIMIT,
     })
+
+
+# ---------------------------------------------------------------------
+# CHKD DISCORD — invite endpoint (streak-gated)
+# ---------------------------------------------------------------------
+
+@app.get("/chkd/discord/invite")
+async def chkd_discord_invite(request: Request, user_id: str = ""):
+    """
+    Returns a single-use Discord invite for users who have earned a 7-day streak.
+    Verified server-side against Supabase days table.
+    Authenticated via CHKD-Client-Secret header.
+    """
+    secret = request.headers.get("CHKD-Client-Secret", "")
+    if CHKD_CLIENT_SECRET and secret != CHKD_CLIENT_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id required")
+
+    # Verify streak against Supabase
+    from services.chkd import get_recent_days, _has_streak, _DAYS_LOOKBACK, _DAYS_USER_ID
+    recent = get_recent_days(_DAYS_LOOKBACK)
+    user_days = [r for r in recent if r.get(_DAYS_USER_ID) == user_id]
+
+    if not _has_streak(user_days, CHKD_STREAK_REQUIRED):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Streak of {CHKD_STREAK_REQUIRED} days required to unlock Discord."
+        )
+
+    from services.discord import create_invite
+    invite_url = create_invite(max_uses=1, max_age=604800)
+
+    if not invite_url:
+        raise HTTPException(status_code=503, detail="Could not generate invite — try again shortly.")
+
+    return JSONResponse({"invite_url": invite_url, "streak_required": CHKD_STREAK_REQUIRED})
 
 
 # ---------------------------------------------------------------------
