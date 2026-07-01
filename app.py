@@ -2687,8 +2687,36 @@ async def chkd_profile_webhook(request: Request, db: Session = Depends(get_db)):
     email   = record.get("email", "")
     name    = record.get("full_name") or record.get("name") or email
 
+    # Supabase stores email in auth.users, not public.profiles.
+    # If the record doesn't include it, look it up via the auth admin API.
+    if not email and user_id:
+        try:
+            import httpx as _httpx
+            _sb_url = os.getenv("SUPABASE_URL", "https://vmpoexkcdcsbufqxwdwe.supabase.co")
+            _sb_key = os.getenv("SUPABASE_SERVICE_KEY", "")
+            if _sb_key:
+                r = _httpx.get(
+                    f"{_sb_url}/auth/v1/admin/users/{user_id}",
+                    headers={"apikey": _sb_key, "Authorization": f"Bearer {_sb_key}"},
+                    timeout=10,
+                )
+                if r.status_code == 200:
+                    auth_user = r.json()
+                    email = auth_user.get("email", "")
+                    if not name or name == user_id:
+                        name = (
+                            auth_user.get("user_metadata", {}).get("full_name")
+                            or auth_user.get("user_metadata", {}).get("name")
+                            or email
+                        )
+                    print(f"[chkd] webhook: looked up email for {user_id}: {email}")
+                else:
+                    print(f"[chkd] webhook: auth lookup failed {r.status_code}: {r.text[:100]}")
+        except Exception as exc:
+            print(f"[chkd] webhook: auth lookup error: {exc}")
+
     if not email:
-        return {"ok": True, "skipped": "no email in record"}
+        return {"ok": True, "skipped": "no email in record or auth lookup"}
 
     from services.chkd import build_welcome_email, send_chkd_email
     subj, body = build_welcome_email(name)
