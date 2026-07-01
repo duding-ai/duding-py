@@ -1278,6 +1278,168 @@ def job_chkd_daily() -> None:
         _log(f"[chkd] daily sweep: {counts}")
     except Exception as exc:
         _log(f"[chkd] ERROR: {exc}")
+    # Also fire milestone Discord announcements (14 / 30 / 60 / 100 days)
+    job_discord_milestones()
+
+
+# ── CHKD Discord jobs ──────────────────────────────────────────────────────────
+
+def job_discord_daily_checkin() -> None:
+    """CHKD Discord — post daily check-in prompt to #check-in at 8am UTC."""
+    from services.discord import post_to_channel_by_name
+    from datetime import datetime, timezone
+    now      = datetime.now(timezone.utc)
+    date_str = now.strftime("%B %d")
+    msg = (
+        f"🌅 Day {date_str}. Time to check in.\n"
+        f"What are you scoring today?\n"
+        f"Drop your score: Name / Score / Streak"
+    )
+    ok = post_to_channel_by_name("check-in", msg)
+    _log(f"{'✓' if ok else '✗'} Discord check-in posted")
+
+
+def job_discord_leaderboard() -> None:
+    """CHKD Discord — post top-5 streak leaderboard to #leaderboard every Monday 9am UTC."""
+    from services.discord import post_to_channel_by_name
+    from services.chkd import get_all_profiles, get_recent_days, _parse_date
+    from datetime import datetime, timezone, timedelta
+
+    profiles    = get_all_profiles()
+    recent_days = get_recent_days(lookback=105)
+
+    days_by_user: Dict[str, List[Dict]] = {}
+    for row in recent_days:
+        uid = row.get("user_id", "")
+        if uid:
+            days_by_user.setdefault(uid, []).append(row)
+
+    def _streak(user_days: List[Dict]) -> int:
+        today = datetime.now(timezone.utc).date()
+        n = 0
+        for i in range(105):
+            check = today - timedelta(days=i)
+            hit = any(
+                _parse_date(r.get("date")) == check and (r.get("score") or 0) > 0
+                for r in user_days
+            )
+            if hit:
+                n += 1
+            else:
+                break
+        return n
+
+    board = []
+    for p in profiles:
+        uid  = p.get("id", "")
+        name = p.get("full_name") or p.get("email", "")
+        if not uid:
+            continue
+        s = _streak(days_by_user.get(uid, []))
+        if s > 0:
+            board.append((name, s))
+
+    board.sort(key=lambda x: x[1], reverse=True)
+    top5 = board[:5]
+
+    if not top5:
+        _log("[discord] leaderboard: no active streaks to post")
+        return
+
+    medals = ["1.", "2.", "3.", "4.", "5."]
+    lines  = ["🏆 WEEKLY LEADERBOARD"]
+    for i, (name, streak) in enumerate(top5):
+        first = (name or "Anonymous").split()[0]
+        flame = " 🔥" if i == 0 else ""
+        lines.append(f"{medals[i]} {first} — {streak} day streak{flame}")
+    lines += ["", "Keep pushing. See you next Monday."]
+
+    post_to_channel_by_name("leaderboard", "\n".join(lines))
+    _log(f"✓ Discord leaderboard posted — {len(top5)} entries")
+
+
+def job_discord_milestones() -> None:
+    """CHKD Discord — announce 14/30/60/100-day milestones to #streaks (called by job_chkd_daily)."""
+    from services.discord import (
+        post_message as _disc_post,
+        get_channel_by_name as _disc_ch,
+        MILESTONE_LENGTHS,
+        MILESTONE_MESSAGES,
+    )
+    from services.chkd import get_all_profiles, get_recent_days, _parse_date
+    from models.chkd_email import ChkdEmail
+    from datetime import datetime, timezone, timedelta
+
+    profiles    = get_all_profiles()
+    recent_days = get_recent_days(lookback=105)
+
+    days_by_user: Dict[str, List[Dict]] = {}
+    for row in recent_days:
+        uid = row.get("user_id", "")
+        if uid:
+            days_by_user.setdefault(uid, []).append(row)
+
+    streaks_ch = _disc_ch("streaks")
+    cid        = streaks_ch["id"] if streaks_ch else None
+    if not cid:
+        _log("[discord] #streaks channel not found — skipping milestones")
+        return
+
+    db = SessionLocal()
+    try:
+        today = datetime.now(timezone.utc).date()
+        for p in profiles:
+            uid  = p.get("id", "")
+            name = p.get("full_name") or p.get("email", "")
+            if not uid:
+                continue
+            user_days = days_by_user.get(uid, [])
+
+            # Compute streak length
+            streak_len = 0
+            for i in range(105):
+                check = today - timedelta(days=i)
+                if any(_parse_date(r.get("date")) == check and (r.get("score") or 0) > 0
+                       for r in user_days):
+                    streak_len += 1
+                else:
+                    break
+
+            for n in MILESTONE_LENGTHS:
+                if n == 7:
+                    continue  # day7_streak email flow handles this
+                if streak_len < n:
+                    continue
+                email_type = f"discord_streak_{n}"
+                already = db.query(ChkdEmail).filter(
+                    ChkdEmail.user_id    == uid,
+                    ChkdEmail.email_type == email_type,
+                ).first()
+                if already:
+                    continue
+
+                first = (name or "Someone").split()[0]
+                _disc_post(f"🔥 **{first} just hit {n} days straight.**\n{MILESTONE_MESSAGES[n]}", cid)
+                db.add(ChkdEmail(user_id=uid, email=p.get("email", ""), email_type=email_type))
+                db.commit()
+                _log(f"[discord] milestone {n}d → {first}")
+
+    except Exception as exc:
+        db.rollback()
+        _log(f"[discord] ERROR job_discord_milestones: {exc}")
+    finally:
+        db.close()
+
+
+def job_discord_member_poll() -> None:
+    """CHKD Discord — check for new server members every 2 minutes, post welcome."""
+    from services.discord import check_new_members
+    try:
+        welcomed = check_new_members()
+        if welcomed:
+            _log(f"[discord] Welcomed {welcomed} new member(s)")
+    except Exception as exc:
+        _log(f"[discord] ERROR member_poll: {exc}")
 
 
 def job_social_intelligence() -> None:
@@ -1418,6 +1580,27 @@ def start_engine() -> None:
         CronTrigger(day_of_week="mon", hour=9, minute=0, timezone="UTC"),
         id="social_intelligence",
         max_instances=1, misfire_grace_time=3600,
+    )
+    # CHKD Discord — daily check-in post 8am UTC
+    _scheduler.add_job(
+        job_discord_daily_checkin,
+        CronTrigger(hour=8, minute=0, timezone="UTC"),
+        id="discord_checkin",
+        max_instances=1, misfire_grace_time=3600,
+    )
+    # CHKD Discord — weekly leaderboard Monday 9am UTC
+    _scheduler.add_job(
+        job_discord_leaderboard,
+        CronTrigger(day_of_week="mon", hour=9, minute=0, timezone="UTC"),
+        id="discord_leaderboard",
+        max_instances=1, misfire_grace_time=3600,
+    )
+    # CHKD Discord — new member poll every 2 minutes
+    _scheduler.add_job(
+        job_discord_member_poll, "interval", minutes=2,
+        id="discord_member_poll",
+        next_run_time=now + timedelta(minutes=1),
+        max_instances=1, misfire_grace_time=60,
     )
 
     _scheduler.start()

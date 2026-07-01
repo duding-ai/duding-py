@@ -46,5 +46,8 @@ aiofiles==24.1.0
 # Anthropic SDK (Social Intelligence Agent + future AI features)
 anthropic==0.54.0
 
+# Ed25519 signature verification for Discord Interactions Endpoint
+PyNaCl==1.5.0
+
 # Headless browser rendering (Content Generation Agent)
 # playwright==1.49.0  # re-enable after separate Chromium Railway service is configured

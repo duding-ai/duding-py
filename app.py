@@ -3215,4 +3215,124 @@ async def social_intel_report(
 
 
 # ---------------------------------------------------------------------
+# DISCORD BOT — server setup + slash command interactions
+# ---------------------------------------------------------------------
+
+DISCORD_COACH_DAILY_LIMIT = 5
+
+# In-memory rate limit: {discord_user_id: count} reset daily
+_discord_coach_usage: dict = {}
+_discord_coach_usage_date: Optional[str] = None
+
+
+def _discord_coach_allowed(user_id: str) -> bool:
+    global _discord_coach_usage, _discord_coach_usage_date
+    from datetime import date as _date
+    today = _date.today().isoformat()
+    if _discord_coach_usage_date != today:
+        _discord_coach_usage = {}
+        _discord_coach_usage_date = today
+    count = _discord_coach_usage.get(user_id, 0)
+    if count >= DISCORD_COACH_DAILY_LIMIT:
+        return False
+    _discord_coach_usage[user_id] = count + 1
+    return True
+
+
+def _run_discord_coach(question: str, user_id: str, token: str, application_id: str) -> None:
+    """Background task: call Claude, then PATCH the deferred Discord interaction."""
+    import anthropic as _ant
+    import httpx as _httpx
+
+    webhook_url = f"https://discord.com/api/v10/webhooks/{application_id}/{token}/messages/@original"
+
+    system_prompt = (
+        "You are the CHKD coach — a direct, no-nonsense accountability partner for men who "
+        "track their 5 non-negotiables every day. Give short, actionable advice. "
+        "No fluff. No motivational poster quotes. Max 3 sentences."
+    )
+    try:
+        _ai = _ant.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+        resp = _ai.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=300,
+            system=system_prompt,
+            messages=[{"role": "user", "content": question}],
+        )
+        answer = resp.content[0].text if resp.content else "Could not generate a response."
+    except Exception as exc:
+        answer = f"Coach is unavailable right now. Try again later."
+        print(f"[discord/coach] AI error: {exc}")
+
+    try:
+        _httpx.patch(webhook_url, json={"content": answer}, timeout=10)
+    except Exception as exc:
+        print(f"[discord/coach] webhook edit error: {exc}")
+
+
+@app.post("/discord/interactions")
+async def discord_interactions(request: Request, background_tasks: BackgroundTasks):
+    """
+    Discord Interactions Endpoint.
+    Set this URL in the Discord Developer Portal → Your App → Interactions Endpoint URL:
+      https://duding.ai/discord/interactions
+    Required env vars: DISCORD_PUBLIC_KEY, DISCORD_APPLICATION_ID
+    """
+    import json as _j
+    from services.discord import verify_interaction
+
+    signature = request.headers.get("X-Signature-Ed25519", "")
+    timestamp  = request.headers.get("X-Signature-Timestamp", "")
+    body_bytes = await request.body()
+
+    if not verify_interaction(body_bytes, signature, timestamp):
+        raise HTTPException(status_code=401, detail="Invalid request signature")
+
+    data = _j.loads(body_bytes)
+    itype = data.get("type")
+
+    # Type 1: Discord PING verification
+    if itype == 1:
+        return JSONResponse({"type": 1})
+
+    # Type 2: APPLICATION_COMMAND
+    if itype == 2:
+        command = data.get("data", {}).get("name", "")
+        if command == "coach":
+            options   = data.get("data", {}).get("options", [])
+            question  = next((o["value"] for o in options if o["name"] == "question"), "")
+            user_info = data.get("member", {}).get("user", {}) or data.get("user", {})
+            user_id   = user_info.get("id", "anonymous")
+            token     = data.get("token", "")
+            app_id    = os.getenv("DISCORD_APPLICATION_ID", "")
+
+            if not _discord_coach_allowed(user_id):
+                return JSONResponse({
+                    "type": 4,
+                    "data": {"content": f"You've hit your {DISCORD_COACH_DAILY_LIMIT}/day limit for /coach. Come back tomorrow.", "flags": 64},
+                })
+
+            background_tasks.add_task(_run_discord_coach, question, user_id, token, app_id)
+            # Type 5: DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
+            return JSONResponse({"type": 5})
+
+    return JSONResponse({"type": 1})
+
+
+@app.post("/discord/setup")
+async def discord_setup_endpoint(request: Request):
+    """
+    Admin endpoint to build the full CHKD Discord server structure.
+    Protected by session login.
+    POST /discord/setup  (no body required)
+    """
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403, detail="Not authenticated")
+
+    from services.discord import setup_server
+    result = setup_server()
+    return JSONResponse(result)
+
+
+# ---------------------------------------------------------------------
 # (health route defined at top of file)
