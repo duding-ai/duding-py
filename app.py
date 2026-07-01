@@ -55,6 +55,7 @@ from models.content_idea import ContentIdea
 from models.client_draft import ClientDraft
 from models.retainer_client import RetainerClient
 from models.chkd_email import ChkdEmail
+from models.chkd_ai_usage import ChkdAiUsage
 from models.client import Client
 from models.social_intelligence_report import SocialIntelligenceReport
 from models.content_piece import ContentPiece
@@ -98,7 +99,9 @@ if not engine.url.drivername.startswith("sqlite"):
         ))
         _conn.commit()
 
-CHKD_WEBHOOK_SECRET = os.getenv("CHKD_WEBHOOK_SECRET", "")
+CHKD_WEBHOOK_SECRET  = os.getenv("CHKD_WEBHOOK_SECRET", "")
+CHKD_CLIENT_SECRET   = os.getenv("CHKD_CLIENT_SECRET", "")
+CHKD_AI_DAILY_LIMIT  = 20
 
 
 # ---------------------------------------------------------------------
@@ -2656,6 +2659,84 @@ async def export_txt(request: Request):
     body = "\n".join(sorted(emails)) + "\n"
     headers = {"Content-Disposition": 'attachment; filename="emails.txt"'}
     return StreamingResponse(StringIO(body), media_type="text/plain", headers=headers)
+
+
+# ---------------------------------------------------------------------
+# CHKD AI COACH PROXY
+# Keeps ANTHROPIC_API_KEY server-side; CHKD app authenticates with
+# CHKD_CLIENT_SECRET header.  Rate-limited to 20 req/user/day.
+# ---------------------------------------------------------------------
+
+@app.post("/chkd/ai/coach")
+async def chkd_ai_coach(request: Request, db: Session = Depends(get_db)):
+    # 1. Authenticate with CHKD_CLIENT_SECRET
+    secret = request.headers.get("CHKD-Client-Secret", "")
+    if CHKD_CLIENT_SECRET and secret != CHKD_CLIENT_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    messages    = body.get("messages", [])
+    system      = body.get("system", "You are CHKD Coach — a direct accountability coach for men.")
+    max_tokens  = min(int(body.get("max_tokens", 500)), 1000)
+    user_id     = str(body.get("user_id", "anonymous"))[:128]
+
+    if not messages:
+        raise HTTPException(status_code=400, detail="messages required")
+
+    # 2. Rate-limit check (20 req / user / day)
+    today = datetime.now(timezone.utc).date()
+    usage = db.query(ChkdAiUsage).filter(
+        ChkdAiUsage.user_id == user_id,
+        ChkdAiUsage.date    == today,
+    ).first()
+
+    if usage and usage.request_count >= CHKD_AI_DAILY_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily limit of {CHKD_AI_DAILY_LIMIT} coach messages reached. Come back tomorrow."
+        )
+
+    # 3. Call Anthropic server-side
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="AI service unavailable")
+
+    try:
+        import anthropic as _anthropic
+        client  = _anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=max_tokens,
+            system=system,
+            messages=messages,
+        )
+        reply = message.content[0].text if message.content else "Stay locked in. Execute."
+    except Exception as exc:
+        print(f"[chkd_coach] Anthropic error: {exc}")
+        raise HTTPException(status_code=502, detail="AI service error")
+
+    # 4. Record usage (upsert)
+    try:
+        if usage:
+            usage.request_count += 1
+        else:
+            db.add(ChkdAiUsage(user_id=user_id, date=today, request_count=1))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[chkd_coach] usage tracking error: {exc}")
+
+    # 5. Return in Anthropic-compatible shape so client needs minimal changes
+    return JSONResponse({
+        "content": [{"type": "text", "text": reply}],
+        "model": "claude-sonnet-4-6",
+        "usage_today": (usage.request_count if usage else 1),
+        "limit": CHKD_AI_DAILY_LIMIT,
+    })
 
 
 # ---------------------------------------------------------------------
