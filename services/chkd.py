@@ -20,10 +20,12 @@ from models.chkd_email import ChkdEmail
 
 # ── Supabase config ───────────────────────────────────────────────────────────
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://vmpoexkcdcsbufqxwdwe.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
-
+SUPABASE_URL = "https://vmpoexkcdcsbufqxwdwe.supabase.co"
 CHKD_APP_URL = "https://getchkd.app"
+
+
+def _supabase_key() -> str:
+    return os.getenv("SUPABASE_SERVICE_KEY", "")
 
 # Column names — change here if the schema uses different names
 _PROFILES_TABLE   = "profiles"
@@ -43,16 +45,17 @@ _DAYS_LOOKBACK = 8
 # ── Supabase REST helper ──────────────────────────────────────────────────────
 
 def _sb_headers() -> Dict[str, str]:
+    key = _supabase_key()
     return {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
         "Prefer": "return=representation",
     }
 
 
 def _sb_get(table: str, params: Optional[Dict] = None) -> List[Dict]:
-    if not SUPABASE_KEY:
+    if not _supabase_key():
         print("[chkd] SUPABASE_SERVICE_KEY not set — skipping Supabase query")
         return []
     url = f"{SUPABASE_URL}/rest/v1/{table}"
