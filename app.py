@@ -2878,7 +2878,7 @@ async def clients_list(request: Request, db: Session = Depends(get_db)):
         extra: dict = {}
         if c.type == "internal":
             extra["emails_sent"] = db.query(ChkdEmail).count()
-            last = db.query(ChkdEmail.sent_at).order_by(ChkdEmail.sent_at.desc()).scalar()
+            last = db.query(ChkdEmail.sent_at).order_by(ChkdEmail.sent_at.desc()).limit(1).scalar()
             extra["last_activity"] = last
         elif c.type == "install" and c.external_id:
             build = db.query(Build).filter(Build.build_id == c.external_id).first()
