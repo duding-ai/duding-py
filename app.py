@@ -94,6 +94,52 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+# ---------------------------------------------------------------------
+# RATE LIMIT — unknown paths (blocks vuln-scanner sweeps, e.g. /.env, error.log probes)
+# ---------------------------------------------------------------------
+from collections import defaultdict, deque
+from starlette.routing import Match
+
+_unknown_path_hits: dict = defaultdict(deque)
+_UNKNOWN_PATH_LIMIT  = 10   # requests
+_UNKNOWN_PATH_WINDOW = 60   # seconds
+
+
+def _client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _path_is_known(path: str) -> bool:
+    if path.startswith("/static/"):
+        return True
+    scope = {"type": "http", "path": path, "method": "GET"}
+    for route in app.router.routes:
+        try:
+            match, _ = route.matches(scope)
+        except Exception:
+            continue
+        if match != Match.NONE:
+            return True
+    return False
+
+
+@app.middleware("http")
+async def rate_limit_unknown_paths(request: Request, call_next):
+    path = request.url.path
+    if not _path_is_known(path):
+        ip  = _client_ip(request)
+        now = time.monotonic()
+        hits = _unknown_path_hits[ip]
+        while hits and now - hits[0] > _UNKNOWN_PATH_WINDOW:
+            hits.popleft()
+        hits.append(now)
+        if len(hits) > _UNKNOWN_PATH_LIMIT:
+            return JSONResponse({"detail": "Too Many Requests"}, status_code=429)
+    return await call_next(request)
+
 Base.metadata.create_all(bind=engine)
 
 # Custom Jinja2 filters

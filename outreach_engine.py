@@ -615,22 +615,27 @@ def job_send_next_queued() -> None:
         prospect.last_email_subject   = subject
         prospect.last_message         = body
         prospect.next_follow_up_at    = datetime.now(timezone.utc) + timedelta(days=3)
-        prospect.status               = "pending_review" if is_generic else "outreach_pending"
 
-        if not is_generic:
-            prospect.last_contacted_at = datetime.now(timezone.utc)
+        # Send to every prospect with a found email, generic inbox or not.
+        # email_quality still records direct vs generic for tracking (see daily briefing).
+        if to_email:
+            prospect.status             = "outreach_pending"
+            prospect.last_contacted_at  = datetime.now(timezone.utc)
             db.add(OutreachActivity(
                 prospect_id=prospect.id, activity_type="email_sent",
                 subject=subject, body_preview=body[:180], status="sent",
             ))
+        else:
+            prospect.status = "pending_review"
         db.commit()
 
-        if not is_generic:
+        if to_email:
             ok = _send(to_email, subject, body, from_name="Tommy")
             _state["last_send_at"] = datetime.now(timezone.utc)
-            _log(f"{'✓' if ok else '✗'} {biz_name} → {to_email}")
+            tag = "generic" if is_generic else "direct"
+            _log(f"{'✓' if ok else '✗'} {biz_name} → {to_email} [{tag}]")
         else:
-            _log(f"✋ {biz_name} → {to_email} [generic — held for review]")
+            _log(f"✋ {biz_name} — no email found [held for review]")
 
         # SECTION 8 — Content angle if business mentions years of experience
         years_match = re.search(r"(\d{1,2})\s*\+?\s*years", description, re.IGNORECASE)
@@ -874,6 +879,22 @@ def job_daily_summary() -> None:
                 OutreachActivity.created_at < y_end,
             ).count()
         )
+        sent_generic_yday = (
+            db.query(OutreachProspect)
+            .filter(
+                OutreachProspect.last_contacted_at >= y_start,
+                OutreachProspect.last_contacted_at < y_end,
+                OutreachProspect.email_quality == "generic",
+            ).count()
+        )
+        sent_direct_yday = (
+            db.query(OutreachProspect)
+            .filter(
+                OutreachProspect.last_contacted_at >= y_start,
+                OutreachProspect.last_contacted_at < y_end,
+                OutreachProspect.email_quality != "generic",
+            ).count()
+        )
         replies_yday = (
             db.query(OutreachActivity)
             .filter(
@@ -929,6 +950,19 @@ def job_daily_summary() -> None:
             .count()
         )
 
+        try:
+            from services.chkd import get_chkd_stats, get_new_signups_since
+            from models.chkd_email import ChkdEmail
+            chkd_stats        = get_chkd_stats()
+            chkd_new_signups  = get_new_signups_since(y_end)  # since midnight UTC today
+            chkd_emails_today = (
+                db.query(ChkdEmail).filter(ChkdEmail.sent_at >= y_end).count()
+            )
+        except Exception as _chkd_exc:
+            _log(f"[chkd] daily briefing stats failed: {_chkd_exc}")
+            chkd_stats = {"streak7_count": 0, "at_risk_count": 0}
+            chkd_new_signups, chkd_emails_today = 0, 0
+
         hot_text = "\n".join(
             f"  {i+1}. {p.business_name or p.email}  [{p.status}]  {p.website or ''}"
             for i, p in enumerate(hot_prospects)
@@ -947,9 +981,16 @@ def job_daily_summary() -> None:
             f"Business summary for {date_str}:\n\n"
             f"--- OUTREACH ---\n"
             f"  Emails sent yesterday:    {sent_yday} / {DAILY_SEND_LIMIT}\n"
+            f"    direct:                 {sent_direct_yday}\n"
+            f"    generic (info@/etc):    {sent_generic_yday}\n"
             f"  Replies yesterday:        {replies_yday}\n"
             f"  Replies this week:        {replies_week}\n"
             f"  Total prospects:          {total_prospects}\n\n"
+            f"--- CHKD ---\n"
+            f"  New signups today:        {chkd_new_signups}\n"
+            f"  Active 7-day streaks:     {chkd_stats.get('streak7_count', 0)}\n"
+            f"  At-risk (3+ days quiet):  {chkd_stats.get('at_risk_count', 0)}\n"
+            f"  Emails sent today:        {chkd_emails_today}\n\n"
             f"--- REVENUE ---\n"
             f"  Deposits this month:      {deposits_month}\n"
             f"  Revenue to date:          ${revenue_total:,.0f}\n"

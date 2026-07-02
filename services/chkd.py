@@ -163,6 +163,24 @@ def _parse_date(val: Any) -> Optional[date]:
         return None
 
 
+def _parse_datetime(val: Any) -> Optional[datetime]:
+    if not val:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(val).replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def get_new_signups_since(cutoff: datetime) -> int:
+    """Count profiles created at/after `cutoff` — used for the daily briefing."""
+    return sum(
+        1 for p in get_all_profiles()
+        if (created := _parse_datetime(p.get(_PROFILES_CREATED, ""))) and created >= cutoff
+    )
+
+
 def _has_streak(user_days: List[Dict], length: int = 7) -> bool:
     """True if user scored > 0 on each of the last `length` calendar days (UTC)."""
     today  = datetime.now(timezone.utc).date()
