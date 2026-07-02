@@ -360,12 +360,18 @@ def notify_streak(name: str, streak: int = 7) -> Optional[str]:
 
 _last_audit_id: Optional[str] = None
 
+# The audit-log endpoint 403s until a human grants the bot's role "View Audit
+# Log" in Discord Server Settings — a bot can never grant this to itself via
+# the API. Track state so we warn once instead of spamming logs every poll.
+_audit_log_permission_ok: Optional[bool] = None
+
 
 def get_recent_joins(after_id: Optional[str] = None) -> List[Dict]:
     """
     Poll audit log for GUILD_MEMBER_ADD events (action_type=1).
     Returns newest-first list of member dicts.
     """
+    global _audit_log_permission_ok
     if not _token() or not _guild_id():
         return []
     params: Dict[str, Any] = {"action_type": 1, "limit": 10}
@@ -379,6 +385,9 @@ def get_recent_joins(after_id: Optional[str] = None) -> List[Dict]:
             timeout=10,
         )
         if r.status_code == 200:
+            if _audit_log_permission_ok is False:
+                print("[discord] audit log access recovered — new-member welcomes resumed")
+            _audit_log_permission_ok = True
             data = r.json()
             entries = data.get("audit_log_entries", [])
             users = {u["id"]: u for u in data.get("users", [])}
@@ -393,7 +402,17 @@ def get_recent_joins(after_id: Optional[str] = None) -> List[Dict]:
                     "display_name": user.get("global_name") or user.get("username", "Unknown"),
                 })
             return result
-        print(f"[discord] audit log {r.status_code}: {r.text[:200]}")
+        if r.status_code == 403:
+            if _audit_log_permission_ok is not False:
+                print(
+                    "[discord] audit log 403 Missing Permissions — new-member welcome "
+                    "posts are disabled until a server admin grants the bot's role "
+                    "'View Audit Log' in Discord: Server Settings -> Roles -> [bot role]. "
+                    "A bot cannot grant this to itself via the API."
+                )
+            _audit_log_permission_ok = False
+        else:
+            print(f"[discord] audit log {r.status_code}: {r.text[:200]}")
         return []
     except Exception as exc:
         print(f"[discord] get_recent_joins error: {exc}")

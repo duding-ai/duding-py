@@ -30,9 +30,10 @@ def _supabase_key() -> str:
 # Column names — change here if the schema uses different names
 _PROFILES_TABLE   = "profiles"
 _PROFILES_ID      = "id"
-_PROFILES_EMAIL   = "email"
 _PROFILES_NAME    = "full_name"   # try "name" if this doesn't exist
 _PROFILES_CREATED = "created_at"
+# Email lives in auth.users, not public.profiles — resolved per-user via
+# the auth admin API (see _lookup_auth_email), same as the webhook handler.
 
 _DAYS_TABLE   = "days"
 _DAYS_USER_ID = "user_id"
@@ -74,9 +75,36 @@ def _sb_get(table: str, params: Optional[Dict] = None) -> List[Dict]:
 
 def get_all_profiles() -> List[Dict[str, Any]]:
     return _sb_get(_PROFILES_TABLE, {
-        "select": f"{_PROFILES_ID},{_PROFILES_EMAIL},{_PROFILES_NAME},{_PROFILES_CREATED}",
+        "select": f"{_PROFILES_ID},{_PROFILES_NAME},{_PROFILES_CREATED}",
         "limit": "2000",
     })
+
+
+def _lookup_auth_email(user_id: str) -> Tuple[str, str]:
+    """Resolve (email, name) for a user via the Supabase auth admin API.
+
+    Email lives in auth.users, not public.profiles, so it can't be selected
+    through the profiles REST query. Same lookup as the webhook handler.
+    """
+    key = _supabase_key()
+    if not key or not user_id:
+        return "", ""
+    try:
+        r = httpx.get(
+            f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            auth_user = r.json()
+            email = auth_user.get("email", "")
+            meta  = auth_user.get("user_metadata", {})
+            name  = meta.get("full_name") or meta.get("name") or email
+            return email, name
+        print(f"[chkd] auth lookup failed {r.status_code}: {r.text[:200]}")
+    except Exception as exc:
+        print(f"[chkd] auth lookup error: {exc}")
+    return "", ""
 
 
 def get_recent_days(lookback: int = _DAYS_LOOKBACK) -> List[Dict[str, Any]]:
@@ -104,15 +132,16 @@ def get_chkd_stats() -> Dict[str, Any]:
 
     for p in profiles:
         uid       = p.get(_PROFILES_ID, "")
-        email     = p.get(_PROFILES_EMAIL, "")
-        name      = p.get(_PROFILES_NAME) or email
+        name      = p.get(_PROFILES_NAME) or ""
         created   = p.get(_PROFILES_CREATED, "")
         user_days = days_by_user.get(uid, [])
 
         if _has_streak(user_days, 7):
-            streaks.append({"uid": uid, "name": name, "email": email})
+            email, auth_name = _lookup_auth_email(uid)
+            streaks.append({"uid": uid, "name": name or auth_name, "email": email})
         if _needs_reengagement(user_days, created):
-            at_risk.append({"uid": uid, "name": name, "email": email})
+            email, auth_name = _lookup_auth_email(uid)
+            at_risk.append({"uid": uid, "name": name or auth_name, "email": email})
 
     return {
         "total":          len(profiles),
@@ -284,15 +313,18 @@ def run_daily_checks() -> Dict[str, int]:
     try:
         for p in profiles:
             uid       = p.get(_PROFILES_ID, "")
-            email     = p.get(_PROFILES_EMAIL, "")
-            name      = p.get(_PROFILES_NAME) or email
+            name      = p.get(_PROFILES_NAME) or ""
             created   = p.get(_PROFILES_CREATED, "")
             user_days = days_by_user.get(uid, [])
 
-            if not uid or not email:
+            if not uid:
                 continue
 
             if _has_streak(user_days, 7):
+                email, auth_name = _lookup_auth_email(uid)
+                name = name or auth_name
+                if not email:
+                    continue
                 try:
                     from services.discord import notify_streak
                     discord_invite = notify_streak(name, 7)
@@ -304,6 +336,10 @@ def run_daily_checks() -> Dict[str, int]:
                     counts["day7_streak"] += 1
 
             elif _needs_reengagement(user_days, created):
+                email, auth_name = _lookup_auth_email(uid)
+                name = name or auth_name
+                if not email:
+                    continue
                 subj, body = build_reengagement_email(name)
                 if send_chkd_email(db, uid, email, "day3_reengagement", subj, body):
                     counts["day3_reengagement"] += 1
