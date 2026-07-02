@@ -30,7 +30,7 @@ def _supabase_key() -> str:
 # Column names — change here if the schema uses different names
 _PROFILES_TABLE   = "profiles"
 _PROFILES_ID      = "id"
-_PROFILES_NAME    = "full_name"   # try "name" if this doesn't exist
+_PROFILES_NAME    = "name"
 _PROFILES_CREATED = "created_at"
 # Email lives in auth.users, not public.profiles — resolved per-user via
 # the auth admin API (see _lookup_auth_email), same as the webhook handler.
