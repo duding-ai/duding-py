@@ -521,11 +521,26 @@ def _clean_business_name(raw: str) -> str:
     return name or "your team"
 
 
+# Maps the clean, controlled `industry` classification (from _infer_industry's
+# fixed keyword list) to a natural-language trade term for email copy. Never
+# derive this from `services_found` — that's raw scraped page text (nav links,
+# headings, bullet lists) with no vocabulary check, and can contain anything
+# from award blurbs to directory listings.
+_TRADE_LEVER_TERMS = {
+    "HVAC":            "AC repair",
+    "Plumbing":        "plumbing",
+    "Roofing":         "roofing",
+    "Electrical":      "electrical",
+    "Cleaning":        "cleaning",
+    "Landscaping":     "landscaping",
+    "Pest Control":    "pest control",
+}
+
+
 def build_outreach_email(profile: dict, target: str) -> Tuple[str, str]:
     raw_name      = profile.get("business_name") or profile.get("website_title") or target
     business_name = _clean_business_name(raw_name)
     industry      = profile.get("industry") or ""
-    services      = profile.get("services_found") or []
     scraped       = bool(profile.get("scraped"))
     phones        = (profile.get("phones_found") or []) if scraped else None
     has_form      = bool(profile.get("forms_found")) if scraped else None
@@ -587,15 +602,15 @@ def build_outreach_email(profile: dict, target: str) -> Tuple[str, str]:
             "A short intake form with an instant text-back closes it."
         )
     else:
-        svc = services[0].lower() if services else "inbound"
+        svc = _TRADE_LEVER_TERMS.get(industry, "inbound")
         opener = (
             f"Most service businesses lose 30–40% of {svc} leads to slow follow-up — "
             "someone calls or submits a form, doesn't hear back within the hour, "
             "and books the competitor who responded first."
         )
 
-    service_str = services[0].lower() if services else "service"
-    lever = f"turn more {service_str} inquiries into booked jobs"
+    lever_term = _TRADE_LEVER_TERMS.get(industry, "service")
+    lever = f"turn more {lever_term} inquiries into booked jobs"
 
     subject = f"Quick question — {business_name}"
     body = (
