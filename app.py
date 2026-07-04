@@ -835,6 +835,15 @@ FINDER_BLOCKLIST.update({
     # National franchises (additions)
     "mrrooter.com", "mr-rooter.com", "rescuerooter.com",
     "oneguard.com", "serviceexperts.com", "airsolutionsfl.com",
+    # National HVAC/plumbing/electrical manufacturers — not local contractors,
+    # but show up in searches (e.g. "AC repair Texas" surfacing trane.com)
+    "trane.com", "airtron.com", "carrier.com", "lennox.com", "goodmanmfg.com",
+    "rheem.com", "americanstandardair.com", "daikinac.com", "york.com",
+    "amana-hac.com", "bryant.com", "payne.com", "colemanac.com",
+    "bradfordwhite.com", "aosmith.com", "statewaterheaters.com",
+    "kohler.com", "moen.com", "deltafaucet.com", "mitsubishicomfort.com",
+    "bosch-climate.us", "navien.com", "rinnai.us", "noritz.com",
+    "grainger.com", "ferguson.com", "homedepot.com", "lowes.com",
 })
 
 # URL-fragment keywords that signal a directory page, not a company homepage
@@ -863,6 +872,12 @@ def _is_blocked(url: str) -> bool:
     if domain in FINDER_BLOCKLIST or root in FINDER_BLOCKLIST:
         return True
     if any(kw in url.lower() for kw in FINDER_BLOCKLIST_KW):
+        return True
+    # Subdomains (e.g. "tx.somesite.com") are almost always directory/franchise-
+    # locator pages scraped under a regional prefix, not the business's real
+    # homepage — and the "info@tx.somesite.com" addresses they produce are
+    # frequently unroutable.
+    if len(domain.split(".")) > 2:
         return True
     # Deep paths or article-style slugs are directory listings / blog posts, not homepages
     try:

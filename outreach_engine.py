@@ -25,6 +25,8 @@ from email.header import decode_header as _hdr_decode
 from email.utils import parseaddr
 from typing import Any, Deque, Dict, List, Optional, Set
 
+import dns.resolver
+
 from services.email import send_email as _resend_email
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -60,6 +62,19 @@ LOCATIONS: List[str] = [
     "South Carolina", "Louisiana", "Oregon", "Oklahoma", "Connecticut",
     "Iowa", "Mississippi", "Arkansas", "Kansas", "Utah",
 ]
+
+def has_mx_record(email: str) -> bool:
+    """Strict MX-record check — no A-record fallback. An email whose domain
+    has no MX record cannot receive mail, full stop. Free pre-send filter."""
+    if not email or "@" not in email:
+        return False
+    domain = email.rsplit("@", 1)[-1].strip().lower()
+    try:
+        answers = dns.resolver.resolve(domain, "MX", lifetime=8)
+        return len(answers) > 0
+    except Exception:
+        return False
+
 
 # ── Engine state ──────────────────────────────────────────────────────────────
 
@@ -616,9 +631,19 @@ def job_send_next_queued() -> None:
         prospect.last_message         = body
         prospect.next_follow_up_at    = datetime.now(timezone.utc) + timedelta(days=3)
 
-        # Send to every prospect with a found email, generic inbox or not.
+        # Pre-send MX check — a domain with no MX record cannot receive mail
+        # at all, so there's no point sending (and no point holding for review).
+        mx_ok = bool(to_email) and has_mx_record(to_email)
+
+        # Send to every prospect with a found, MX-valid email, generic inbox or not.
         # email_quality still records direct vs generic for tracking (see daily briefing).
-        if to_email:
+        if to_email and not mx_ok:
+            prospect.status     = "invalid"
+            prospect.email_note = "no MX record — domain cannot receive email"
+            db.commit()
+            _log(f"✗ {biz_name} → {to_email} [invalid — no MX record]")
+            return
+        elif to_email:
             prospect.status             = "outreach_pending"
             prospect.last_contacted_at  = datetime.now(timezone.utc)
             db.add(OutreachActivity(
