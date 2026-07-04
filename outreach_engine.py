@@ -65,7 +65,7 @@ LOCATIONS: List[str] = [
 
 _state: Dict[str, Any] = {
     "running": False,
-    "paused": False,
+    "paused": True,
     "trade_idx": 0,
     "location_idx": 0,
     "last_find_at": None,
