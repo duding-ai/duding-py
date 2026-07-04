@@ -835,6 +835,7 @@ FINDER_BLOCKLIST.update({
     # National franchises (additions)
     "mrrooter.com", "mr-rooter.com", "rescuerooter.com",
     "oneguard.com", "serviceexperts.com", "airsolutionsfl.com",
+    "aireserv.com",
     # National HVAC/plumbing/electrical manufacturers — not local contractors,
     # but show up in searches (e.g. "AC repair Texas" surfacing trane.com)
     "trane.com", "airtron.com", "carrier.com", "lennox.com", "goodmanmfg.com",
