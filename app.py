@@ -156,6 +156,7 @@ if not engine.url.drivername.startswith("sqlite"):
         ))
         _conn.commit()
 
+PRIVACY_TERMS_UPDATED = "July 12, 2026"
 CHKD_WEBHOOK_SECRET  = os.getenv("CHKD_WEBHOOK_SECRET", "")
 CHKD_CLIENT_SECRET   = os.getenv("CHKD_CLIENT_SECRET", "")
 CHKD_AI_DAILY_LIMIT  = 20
@@ -621,8 +622,23 @@ def build_outreach_email(profile: dict, target: str) -> Tuple[str, str]:
         f"goes unanswered. Built to {lever}.\n\n"
         f"Worth a quick 10-minute call this week to see if it makes sense for {business_name}?\n\n"
         f"Tommy"
+        f"{_can_spam_footer()}"
     )
     return subject, body
+
+
+def _can_spam_footer() -> str:
+    """
+    CAN-SPAM requires a valid physical postal address and a clear opt-out
+    instruction on every commercial email. BUSINESS_MAILING_ADDRESS must
+    be set to a real address for this to be compliant — logs a warning
+    and omits the address line if unset rather than inventing one.
+    """
+    address = os.getenv("BUSINESS_MAILING_ADDRESS", "").strip()
+    if not address:
+        print("[email] BUSINESS_MAILING_ADDRESS not set — outreach emails are missing a required CAN-SPAM postal address")
+    addr_line = f"\n{address}" if address else ""
+    return f"\n\n---\nReply \"unsubscribe\" and I'll take you off this list.{addr_line}"
 
 
 # ── Email priority helpers ────────────────────────────────────────────────────
@@ -1085,6 +1101,22 @@ async def landing(
     return templates.TemplateResponse(
         "index.html",
         {"request": request, "thanks": bool(thanks), "error": bool(error)},
+    )
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy_policy(request: Request):
+    return templates.TemplateResponse(
+        "privacy.html",
+        {"request": request, "updated_date": PRIVACY_TERMS_UPDATED, "contact_email": ADMIN_EMAIL},
+    )
+
+
+@app.get("/terms", response_class=HTMLResponse)
+async def terms_of_service(request: Request):
+    return templates.TemplateResponse(
+        "terms.html",
+        {"request": request, "updated_date": PRIVACY_TERMS_UPDATED, "contact_email": ADMIN_EMAIL},
     )
 
 

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Terms of Service — Duding{% endblock %}
+{% block content %}
+<div class="wrap" style="max-width:760px;margin:0 auto;padding:48px 20px;line-height:1.7;">
+  <h1>Terms of Service</h1>
+  <p><em>Last updated: {{ updated_date }}</em></p>
+
+  <p>These Terms govern your use of duding.ai and the lead-intake, website-build, and retainer marketing services offered by Duding ("we," "us," "Service"). By using the Service, you agree to these Terms. This does not apply to CHKD (getchkd.app), which has its own <a href="https://getchkd.app/terms">Terms of Service</a>.</p>
+
+  <h2>1. The Service</h2>
+  <p>Duding provides automated lead-intake systems, website builds, and (for retainer clients) ongoing marketing services for local service businesses. Specific deliverables, pricing, and timelines for a given engagement are as agreed in your build/retainer order or invoice.</p>
+
+  <h2>2. Payment</h2>
+  <p>Payments are processed via Stripe. Deposits and retainer fees are as quoted at time of purchase. Except where required by law or separately agreed in writing, deposits and fees for work already performed are non-refundable.</p>
+
+  <h2>3. Acceptable use</h2>
+  <p>You agree not to use the Service to violate any law, infringe anyone's rights, transmit malware, or attempt to interfere with or gain unauthorized access to our systems.</p>
+
+  <h2>4. Client-provided access and content</h2>
+  <p>If you provide us with ad account, social media, or other third-party logins for retainer marketing services, you represent that you're authorized to grant that access. You're responsible for revoking access when the engagement ends. We are not liable for actions taken by third-party platforms (e.g. account suspensions) that are outside our control.</p>
+
+  <h2>5. No professional advice</h2>
+  <p>Content, recommendations, or marketing copy we produce (including AI-assisted content) is provided for your business's use as-is and does not constitute legal, financial, or professional advice. You are responsible for reviewing and approving content before it's published under your name.</p>
+
+  <h2>6. Disclaimer of warranties</h2>
+  <p>The Service is provided "as is" without warranties of any kind, express or implied, including merchantability, fitness for a particular purpose, or non-infringement. We do not guarantee specific business outcomes (e.g. lead volume, revenue) from use of the Service.</p>
+
+  <h2>7. Limitation of liability</h2>
+  <p>To the maximum extent permitted by law, Duding will not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenue, arising from your use of the Service. Our total liability for any claim relating to the Service will not exceed the amount you paid us in the 3 months preceding the claim.</p>
+
+  <h2>8. Termination</h2>
+  <p>Either party may terminate an ongoing engagement as provided in the applicable order/invoice, or with reasonable written notice where no term is specified. We may suspend or terminate access to the Service for violation of these Terms.</p>
+
+  <h2>9. Changes</h2>
+  <p>We may update these Terms from time to time. Continued use of the Service after changes take effect constitutes acceptance of the revised Terms.</p>
+
+  <h2>10. Governing law</h2>
+  <p><strong>[Tommy — fill in your state]</strong>. These Terms are governed by the laws of the State of ______, without regard to conflict-of-law principles.</p>
+
+  <h2>11. Contact</h2>
+  <p>Questions about these Terms: <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
+</div>
+{% endblock %}
