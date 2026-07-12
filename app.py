@@ -640,6 +640,13 @@ _OWNER_LOCAL = frozenset({
     "owner", "founder", "ceo", "president", "principal", "admin",
     "director", "manager", "partner",
 })
+# Template placeholder addresses left un-replaced on unfinished/boilerplate
+# sites — these pass the domain-match filter but were never a real mailbox.
+_PLACEHOLDER_LOCAL = frozenset({
+    "test", "example", "sample", "demo", "placeholder", "yourname",
+    "youremail", "yourbusiness", "yourcompany", "domain", "email",
+    "username", "user", "name",
+})
 _EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 
 
@@ -656,33 +663,42 @@ def _email_priority(email: str) -> int:
 
 
 def _extract_domain_emails(html: str, base_domain: str) -> List[str]:
-    """Pull emails that belong to base_domain from an HTML page."""
+    """Pull emails that belong to base_domain from an HTML page, excluding
+    template placeholder addresses (test@, example@, yourname@, etc.)."""
     soup = BeautifulSoup(html, "lxml")
     emails: List[str] = []
     seen: Set[str] = set()
 
+    def _consider(raw: str) -> None:
+        if "@" not in raw or base_domain not in raw or raw in seen:
+            return
+        local = raw.split("@", 1)[0]
+        if local in _PLACEHOLDER_LOCAL:
+            return
+        seen.add(raw)
+        emails.append(raw)
+
     for a in soup.find_all("a", href=True):
         href = a["href"]
         if href.lower().startswith("mailto:"):
-            raw = href[7:].split("?")[0].strip().lower().rstrip(".")
-            if "@" in raw and base_domain in raw and raw not in seen:
-                seen.add(raw)
-                emails.append(raw)
+            _consider(href[7:].split("?")[0].strip().lower().rstrip("."))
 
     for m in _EMAIL_RE.finditer(soup.get_text(" ")):
-        raw = m.group(0).lower().rstrip(".")
-        if base_domain in raw and raw not in seen:
-            seen.add(raw)
-            emails.append(raw)
+        _consider(m.group(0).lower().rstrip("."))
 
     return emails
 
 
 def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
     """
-    Fetch homepage + About/Contact pages and return the best decision-maker email.
+    Fetch homepage + About/Contact/Team pages and return the best
+    decision-maker email actually found on the site.
     Returns (email, quality, note) — quality is 'direct' or 'generic'.
     Priority: owner/founder/ceo > named person (john@co.com) > generic (info@, contact@).
+
+    Never fabricates an address (no more info@{domain} guessing) — if
+    nothing is actually published on the site, returns "" so the caller
+    routes the prospect to pending_review instead of emailing a guess.
     """
     try:
         parsed = urlparse(url if "://" in url else "https://" + url)
@@ -693,14 +709,15 @@ def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
         base = f"https://{domain}"
 
     if not domain:
-        return "info@example.com", "generic", "generic email — verify before sending"
+        return "", "none", "no domain resolved — nothing to verify"
 
-    fallback = f"info@{domain}"
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     all_emails: List[str] = []
 
     for page in [url, f"{base}/about", f"{base}/about-us",
-                 f"{base}/contact", f"{base}/contact-us"]:
+                 f"{base}/contact", f"{base}/contact-us",
+                 f"{base}/team", f"{base}/our-team",
+                 f"{base}/staff", f"{base}/leadership"]:
         try:
             r = requests.get(page, headers={"User-Agent": ua}, timeout=8,
                              allow_redirects=True)
@@ -710,7 +727,7 @@ def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
             continue
 
     if not all_emails:
-        return fallback, "generic", "generic email — verify before sending"
+        return "", "none", "no email found on site — not sending a guess"
 
     seen: Set[str] = set()
     deduped = [e for e in all_emails if not (e in seen or seen.add(e))]
@@ -723,10 +740,12 @@ def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
 
 
 def _get_outreach_email_for_target(target: str, resolved_url: str) -> Tuple[str, str, str]:
-    """Returns (email, quality, note). Scrapes About/Contact pages for real owner emails."""
+    """Returns (email, quality, note). Scrapes About/Contact/Team pages for real
+    owner emails. Never fabricates a fallback — empty email means nothing
+    was actually found on the site."""
     url = resolved_url or target
     if not url:
-        return "info@duding.ai", "generic", "generic email — verify before sending"
+        return "", "none", "no URL to scrape"
     return _scrape_contact_email(url)
 
 
