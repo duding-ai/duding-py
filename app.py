@@ -2943,7 +2943,7 @@ async def chkd_waitlist_join(request: Request):
             "Talk soon,\n"
             "Tommy"
         )
-        send_email(email, subject, body, from_name="Tommy @ CHKD")
+        send_email(email, subject, body, from_name="Tommy")
 
     return JSONResponse({"ok": True, "already_on_list": already_on_list})
 
