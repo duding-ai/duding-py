@@ -2928,19 +2928,22 @@ async def chkd_waitlist_join(request: Request):
     already_on_list = r.status_code == 409
 
     if not already_on_list:
-        subject = "You're on the CHKD waitlist"
+        subject = "Most men never make this list."
         body = (
             "Hey,\n\n"
-            "You're on the list.\n\n"
-            "CHKD is a daily scorecard for men who don't quit — 5 non-negotiables, "
-            "tracked every single day: Faith, Workout, Protein Hit, Business Action, "
-            "No BS Time Wasted. You either did them or you didn't. No almost. "
-            "No good enough.\n\n"
-            "We're heading to the App Store soon. You'll be the first to know the "
-            "second it's live.\n\n"
+            "Most guys say they want to change.\n\n"
+            "They say it at midnight, scrolling, tired of the same day on repeat. "
+            "Then morning comes and nothing moves.\n\n"
+            "You didn't just say it. You signed up.\n\n"
+            "CHKD isn't for guys chasing motivation — that runs out by Wednesday. "
+            "It's for the ones done negotiating with themselves. Done with almost. "
+            "Done with good enough.\n\n"
+            "You're early. Before the App Store. Before everyone else finds out. "
+            "When we launch, you're first through the door.\n\n"
+            "Talk soon,\n"
             "Tommy"
         )
-        send_email(email, subject, body, from_name="Tommy")
+        send_email(email, subject, body, from_name="Tommy @ CHKD")
 
     return JSONResponse({"ok": True, "already_on_list": already_on_list})
 
