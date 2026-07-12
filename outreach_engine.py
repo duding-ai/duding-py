@@ -80,7 +80,7 @@ def has_mx_record(email: str) -> bool:
 
 _state: Dict[str, Any] = {
     "running": False,
-    "paused": True,
+    "paused": False,
     "trade_idx": 0,
     "location_idx": 0,
     "last_find_at": None,
