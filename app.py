@@ -1754,14 +1754,16 @@ async def send_pending_prospect(
 
 @app.get("/dashboard/outreach/engine/status")
 async def engine_status(request: Request):
-    require_session(request)
+    if not require_session(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     from outreach_engine import get_status
     return JSONResponse(get_status())
 
 
 @app.post("/dashboard/outreach/engine/pause")
 async def engine_pause(request: Request):
-    require_session(request)
+    if not require_session(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     from outreach_engine import get_status, set_paused
     current = get_status()
     set_paused(not current["paused"])
@@ -1772,7 +1774,8 @@ async def engine_pause(request: Request):
 
 @app.get("/api/business/overview")
 async def business_overview(request: Request, db: Session = Depends(get_db)):
-    require_session(request)
+    if not require_session(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     now     = datetime.now(timezone.utc)
     today   = now.replace(hour=0, minute=0, second=0, microsecond=0)
     w_start = now - timedelta(days=7)
@@ -2646,13 +2649,17 @@ async def api_create_lead(
 
 @app.get("/api/leads", response_model=list[LeadRead])
 async def api_list_leads(
-    skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
+    request: Request, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
 ):
+    if not require_session(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     return db.query(Lead).order_by(Lead.id.desc()).offset(skip).limit(limit).all()
 
 
 @app.get("/api/leads/{lead_id}", response_model=LeadRead)
-async def api_get_lead(lead_id: int, db: Session = Depends(get_db)):
+async def api_get_lead(lead_id: int, request: Request, db: Session = Depends(get_db)):
+    if not require_session(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
@@ -2660,7 +2667,9 @@ async def api_get_lead(lead_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/leads/{lead_id}/events", response_model=list[LeadEventRead])
-async def api_get_lead_events(lead_id: int, db: Session = Depends(get_db)):
+async def api_get_lead_events(lead_id: int, request: Request, db: Session = Depends(get_db)):
+    if not require_session(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
     return (
         db.query(LeadEvent)
         .filter(LeadEvent.lead_id == lead_id)
@@ -2773,14 +2782,36 @@ async def export_txt(request: Request):
 # CHKD AI COACH PROXY
 # Keeps ANTHROPIC_API_KEY server-side; CHKD app authenticates with
 # CHKD_CLIENT_SECRET header.  Rate-limited to 20 req/user/day.
+#
+# user_id is client-supplied and unauthenticated (no Supabase JWT check
+# here), so it can't be trusted as the sole rate-limit key — a caller
+# could bypass the per-user cap just by sending a different value each
+# request. The per-IP limiter below is a backstop against that; it's
+# not perfect (shared IPs/proxies), but closes the trivial bypass.
 # ---------------------------------------------------------------------
+
+_chkd_coach_ip_hits: dict = defaultdict(deque)
+_CHKD_COACH_IP_LIMIT  = CHKD_AI_DAILY_LIMIT
+_CHKD_COACH_IP_WINDOW = 86400  # 24h
+
 
 @app.post("/chkd/ai/coach")
 async def chkd_ai_coach(request: Request, db: Session = Depends(get_db)):
-    # 1. Authenticate with CHKD_CLIENT_SECRET
+    # 1. Authenticate with CHKD_CLIENT_SECRET — fail closed if unset,
+    # never allow the check to silently no-op.
     secret = request.headers.get("CHKD-Client-Secret", "")
-    if CHKD_CLIENT_SECRET and secret != CHKD_CLIENT_SECRET:
+    if not CHKD_CLIENT_SECRET or secret != CHKD_CLIENT_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # 2. Per-IP rate limit — independent of the client-supplied user_id,
+    # so rotating that value doesn't bypass it.
+    ip = _client_ip(request)
+    now_ts = time.monotonic()
+    hits = _chkd_coach_ip_hits[ip]
+    while hits and now_ts - hits[0] > _CHKD_COACH_IP_WINDOW:
+        hits.popleft()
+    if len(hits) >= _CHKD_COACH_IP_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many requests. Try again later.")
 
     try:
         body = await request.json()
@@ -2795,7 +2826,7 @@ async def chkd_ai_coach(request: Request, db: Session = Depends(get_db)):
     if not messages:
         raise HTTPException(status_code=400, detail="messages required")
 
-    # 2. Rate-limit check (20 req / user / day)
+    # 3. Rate-limit check (20 req / user / day)
     today = datetime.now(timezone.utc).date()
     usage = db.query(ChkdAiUsage).filter(
         ChkdAiUsage.user_id == user_id,
@@ -2807,6 +2838,10 @@ async def chkd_ai_coach(request: Request, db: Session = Depends(get_db)):
             status_code=429,
             detail=f"Daily limit of {CHKD_AI_DAILY_LIMIT} coach messages reached. Come back tomorrow."
         )
+
+    # Only count toward the per-IP cap once auth + the per-user cap have
+    # both passed, so a rejected request doesn't also burn IP budget.
+    hits.append(now_ts)
 
     # 3. Call Anthropic server-side
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
@@ -2885,6 +2920,11 @@ async def chkd_waitlist_count():
     return JSONResponse({"count": count})
 
 
+_chkd_waitlist_ip_hits: dict = defaultdict(deque)
+_CHKD_WAITLIST_IP_LIMIT  = 10
+_CHKD_WAITLIST_IP_WINDOW = 3600  # 1h
+
+
 @app.post("/chkd/waitlist")
 async def chkd_waitlist_join(request: Request):
     """
@@ -2892,10 +2932,23 @@ async def chkd_waitlist_join(request: Request):
     select-blocked RLS the same way the insert-allowed policy does for
     anon) and sends a confirmation email via Resend. Authenticated with
     the same CHKD-Client-Secret header used by the other CHKD endpoints.
+
+    Also rate-limited per IP — this triggers a real Resend send per
+    request, so an unthrottled spammer could tank the getchkd.app
+    sending domain's reputation on day one.
     """
     secret = request.headers.get("CHKD-Client-Secret", "")
-    if CHKD_CLIENT_SECRET and secret != CHKD_CLIENT_SECRET:
+    if not CHKD_CLIENT_SECRET or secret != CHKD_CLIENT_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+    ip = _client_ip(request)
+    now_ts = time.monotonic()
+    hits = _chkd_waitlist_ip_hits[ip]
+    while hits and now_ts - hits[0] > _CHKD_WAITLIST_IP_WINDOW:
+        hits.popleft()
+    if len(hits) >= _CHKD_WAITLIST_IP_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many requests. Try again later.")
+    hits.append(now_ts)
 
     try:
         payload = await request.json()
@@ -3002,10 +3055,9 @@ async def chkd_profile_webhook(request: Request, db: Session = Depends(get_db)):
     Configure in Supabase dashboard: Database → Webhooks → profiles → INSERT.
     Set Authorization header to: Bearer {CHKD_WEBHOOK_SECRET}
     """
-    if CHKD_WEBHOOK_SECRET:
-        auth = request.headers.get("Authorization", "")
-        if auth != f"Bearer {CHKD_WEBHOOK_SECRET}":
-            raise HTTPException(status_code=401, detail="Unauthorized")
+    auth = request.headers.get("Authorization", "")
+    if not CHKD_WEBHOOK_SECRET or auth != f"Bearer {CHKD_WEBHOOK_SECRET}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
         payload = await request.json()
