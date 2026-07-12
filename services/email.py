@@ -33,8 +33,14 @@ def send_email(
     body: str,
     from_name: Optional[str] = None,
     from_email: Optional[str] = None,
+    api_key: Optional[str] = None,
 ) -> bool:
-    key = _api_key()
+    """
+    api_key overrides which Resend account sends the email — used by CHKD
+    (a separate Resend account/domain from the main duding.ai one). Falls
+    back to RESEND_API_KEY when not provided.
+    """
+    key = api_key or _api_key()
     if not key:
         print("[email] RESEND_API_KEY not set — skipping send.")
         return False

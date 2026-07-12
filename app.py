@@ -2943,7 +2943,12 @@ async def chkd_waitlist_join(request: Request):
             "Talk soon,\n"
             "Tommy"
         )
-        send_email(email, subject, body, from_name="Tommy")
+        from services.chkd import CHKD_FROM_EMAIL, _chkd_resend_key
+        send_email(
+            email, subject, body,
+            from_name="Tommy", from_email=CHKD_FROM_EMAIL,
+            api_key=_chkd_resend_key(),
+        )
 
     return JSONResponse({"ok": True, "already_on_list": already_on_list})
 

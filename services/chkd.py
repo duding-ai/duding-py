@@ -23,9 +23,17 @@ from models.chkd_email import ChkdEmail
 SUPABASE_URL = "https://vmpoexkcdcsbufqxwdwe.supabase.co"
 CHKD_APP_URL = "https://getchkd.app"
 
+# CHKD sends through its own Resend account/domain, separate from the
+# main duding.ai one used for outreach.
+CHKD_FROM_EMAIL = "tommy@getchkd.app"
+
 
 def _supabase_key() -> str:
     return os.getenv("SUPABASE_SERVICE_KEY", "")
+
+
+def _chkd_resend_key() -> str:
+    return os.getenv("CHKD_RESEND_API_KEY", "")
 
 # Column names — change here if the schema uses different names
 _PROFILES_TABLE   = "profiles"
@@ -298,7 +306,11 @@ def send_chkd_email(
 ) -> bool:
     if _already_sent(db, user_id, email_type):
         return False
-    ok = send_email(to_email, subject, body, from_name="Tommy")
+    ok = send_email(
+        to_email, subject, body,
+        from_name="Tommy", from_email=CHKD_FROM_EMAIL,
+        api_key=_chkd_resend_key(),
+    )
     if ok:
         db.add(ChkdEmail(user_id=user_id, email=to_email, email_type=email_type))
         db.commit()
