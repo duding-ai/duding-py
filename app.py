@@ -2848,6 +2848,102 @@ async def chkd_ai_coach(request: Request, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------
+# CHKD WAITLIST — pre-launch email capture (getchkd.app landing page)
+# ---------------------------------------------------------------------
+
+_CHKD_SUPABASE_URL = "https://vmpoexkcdcsbufqxwdwe.supabase.co"
+
+
+@app.get("/chkd/waitlist/count")
+async def chkd_waitlist_count():
+    """
+    Public count of waitlist signups for the landing page ("Join X men...").
+    Uses the service key since RLS blocks anon SELECT on the waitlist table.
+    """
+    import httpx as _httpx
+    _sb_key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    count = 0
+    if _sb_key:
+        try:
+            r = _httpx.get(
+                f"{_CHKD_SUPABASE_URL}/rest/v1/waitlist",
+                headers={
+                    "apikey": _sb_key, "Authorization": f"Bearer {_sb_key}",
+                    "Prefer": "count=exact",
+                },
+                params={"select": "id", "limit": "1"},
+                timeout=10,
+            )
+            if r.status_code in (200, 206):
+                content_range = r.headers.get("content-range", "")
+                if "/" in content_range:
+                    count = int(content_range.rsplit("/", 1)[-1] or 0)
+        except Exception as exc:
+            print(f"[chkd] waitlist count error: {exc}")
+    return JSONResponse({"count": count})
+
+
+@app.post("/chkd/waitlist")
+async def chkd_waitlist_join(request: Request):
+    """
+    Adds an email to the waitlist (Supabase, service key — bypasses the
+    select-blocked RLS the same way the insert-allowed policy does for
+    anon) and sends a confirmation email via Resend. Authenticated with
+    the same CHKD-Client-Secret header used by the other CHKD endpoints.
+    """
+    secret = request.headers.get("CHKD-Client-Secret", "")
+    if CHKD_CLIENT_SECRET and secret != CHKD_CLIENT_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    email = (payload.get("email") or "").strip().lower()
+    if not email or "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="Invalid email")
+
+    import httpx as _httpx
+    _sb_key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    if not _sb_key:
+        raise HTTPException(status_code=503, detail="Waitlist temporarily unavailable")
+
+    r = _httpx.post(
+        f"{_CHKD_SUPABASE_URL}/rest/v1/waitlist",
+        headers={
+            "apikey": _sb_key, "Authorization": f"Bearer {_sb_key}",
+            "Content-Type": "application/json", "Prefer": "return=minimal",
+        },
+        json={"email": email},
+        timeout=10,
+    )
+    # 201 = newly inserted, 409 = already on the list (unique constraint) — both are a success from the visitor's side
+    if r.status_code not in (201, 409):
+        print(f"[chkd] waitlist insert failed {r.status_code}: {r.text[:200]}")
+        raise HTTPException(status_code=502, detail="Could not join waitlist")
+
+    already_on_list = r.status_code == 409
+
+    if not already_on_list:
+        subject = "You're on the CHKD waitlist"
+        body = (
+            "Hey,\n\n"
+            "You're on the list.\n\n"
+            "CHKD is a daily scorecard for men who don't quit — 5 non-negotiables, "
+            "tracked every single day: Faith, Workout, Protein Hit, Business Action, "
+            "No BS Time Wasted. You either did them or you didn't. No almost. "
+            "No good enough.\n\n"
+            "We're heading to the App Store soon. You'll be the first to know the "
+            "second it's live.\n\n"
+            "Tommy"
+        )
+        send_email(email, subject, body, from_name="Tommy")
+
+    return JSONResponse({"ok": True, "already_on_list": already_on_list})
+
+
+# ---------------------------------------------------------------------
 # CHKD DISCORD — invite endpoint (streak-gated)
 # ---------------------------------------------------------------------
 
