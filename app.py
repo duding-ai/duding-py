@@ -2878,6 +2878,8 @@ async def chkd_waitlist_count():
                 content_range = r.headers.get("content-range", "")
                 if "/" in content_range:
                     count = int(content_range.rsplit("/", 1)[-1] or 0)
+            else:
+                print(f"[chkd] waitlist count {r.status_code}: {r.text[:200]}")
         except Exception as exc:
             print(f"[chkd] waitlist count error: {exc}")
     return JSONResponse({"count": count})
