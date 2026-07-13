@@ -48,6 +48,9 @@ _DAYS_USER_ID = "user_id"
 _DAYS_SCORE   = "score"
 _DAYS_DATE    = "date"
 
+_WAITLIST_TABLE  = "waitlist"
+_WAITLIST_SOURCE = "source"
+
 # How many days to look back when querying the days table
 _DAYS_LOOKBACK = 8
 
@@ -158,6 +161,21 @@ def get_chkd_stats() -> Dict[str, Any]:
         "streaks":        streaks[:25],
         "at_risk":        at_risk[:25],
     }
+
+
+def get_waitlist_by_source() -> Dict[str, Any]:
+    """Waitlist signups tallied by UTM source (?source=), for the admin dashboard."""
+    rows = _sb_get(_WAITLIST_TABLE, {"select": _WAITLIST_SOURCE, "limit": "10000"})
+    counts: Dict[str, int] = {}
+    for row in rows:
+        src = (row.get(_WAITLIST_SOURCE) or "direct").strip().lower() or "direct"
+        counts[src] = counts.get(src, 0) + 1
+    by_source = sorted(
+        ({"source": k, "count": v} for k, v in counts.items()),
+        key=lambda x: x["count"],
+        reverse=True,
+    )
+    return {"total": len(rows), "by_source": by_source}
 
 
 # ── Streak / re-engagement helpers ───────────────────────────────────────────

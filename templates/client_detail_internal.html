@@ -139,6 +139,31 @@
       </div>
     </div>
 
+    {# Waitlist signups by source #}
+    <div class="card card-body" style="margin-bottom:32px;">
+      <h2 class="section-head">Waitlist Signups by Source <span style="color:#6b7280;font-size:12px;font-weight:500;">({{ waitlist_stats.total }} total)</span></h2>
+      {% if waitlist_stats.by_source %}
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <thead><tr style="border-bottom:1px solid #e5e7eb;">
+          <th style="text-align:left;padding:6px 0;color:#6b7280;font-weight:500;">Source</th>
+          <th style="text-align:right;padding:6px 0;color:#6b7280;font-weight:500;">Signups</th>
+          <th style="text-align:right;padding:6px 0;color:#6b7280;font-weight:500;">Share</th>
+        </tr></thead>
+        <tbody>
+          {% for row in waitlist_stats.by_source %}
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px 0;font-weight:600;text-transform:capitalize;">{{ row.source }}</td>
+            <td style="padding:8px 0;text-align:right;">{{ row.count }}</td>
+            <td style="padding:8px 0;text-align:right;color:#6b7280;">{{ (row.count / waitlist_stats.total * 100) | round(1) }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted" style="margin:0;">No waitlist signups yet.</p>
+      {% endif %}
+    </div>
+
     {# Email log #}
     <div class="card card-body">
       <h2 class="section-head">Recent Emails Sent</h2>

@@ -2992,20 +2992,36 @@ async def chkd_waitlist_join(request: Request):
     if not email or "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Invalid email")
 
+    # UTM-style attribution — where the signup link was shared (tiktok,
+    # instagram, direct, ...). Defaults to "direct" when absent.
+    source = (payload.get("source") or "direct").strip().lower()[:40] or "direct"
+
     import httpx as _httpx
     _sb_key = os.getenv("SUPABASE_SERVICE_KEY", "")
     if not _sb_key:
         raise HTTPException(status_code=503, detail="Waitlist temporarily unavailable")
 
+    sb_headers = {
+        "apikey": _sb_key, "Authorization": f"Bearer {_sb_key}",
+        "Content-Type": "application/json", "Prefer": "return=minimal",
+    }
+
     r = _httpx.post(
         f"{_CHKD_SUPABASE_URL}/rest/v1/waitlist",
-        headers={
-            "apikey": _sb_key, "Authorization": f"Bearer {_sb_key}",
-            "Content-Type": "application/json", "Prefer": "return=minimal",
-        },
-        json={"email": email},
+        headers=sb_headers,
+        json={"email": email, "source": source},
         timeout=10,
     )
+    if r.status_code == 400 and "source" in r.text.lower():
+        # "source" column not migrated onto the waitlist table yet — fall
+        # back so signups keep working while that's pending.
+        print(f"[chkd] waitlist insert without 'source' column not found — retrying without it: {r.text[:200]}")
+        r = _httpx.post(
+            f"{_CHKD_SUPABASE_URL}/rest/v1/waitlist",
+            headers=sb_headers,
+            json={"email": email},
+            timeout=10,
+        )
     # 201 = newly inserted, 409 = already on the list (unique constraint) — both are a success from the visitor's side
     if r.status_code not in (201, 409):
         print(f"[chkd] waitlist insert failed {r.status_code}: {r.text[:200]}")
@@ -3231,9 +3247,10 @@ async def client_detail(request: Request, client_id: int, db: Session = Depends(
     ctx: dict = {"request": request, "admin_name": ADMIN_NAME, "client": client}
 
     if client.type == "internal":
-        from services.chkd import get_chkd_stats
+        from services.chkd import get_chkd_stats, get_waitlist_by_source
         import json as _json
         ctx["stats"] = get_chkd_stats()
+        ctx["waitlist_stats"] = get_waitlist_by_source()
         ctx["recent_emails"] = (
             db.query(ChkdEmail).order_by(ChkdEmail.sent_at.desc()).limit(50).all()
         )
