@@ -634,6 +634,7 @@ def _can_spam_footer() -> str:
     be set to a real address for this to be compliant — logs a warning
     and omits the address line if unset rather than inventing one.
     """
+    # TODO: add BUSINESS_MAILING_ADDRESS in Railway when Tommy's mailing address is available.
     address = os.getenv("BUSINESS_MAILING_ADDRESS", "").strip()
     if not address:
         print("[email] BUSINESS_MAILING_ADDRESS not set — outreach emails are missing a required CAN-SPAM postal address")
