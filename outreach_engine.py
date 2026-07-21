@@ -36,6 +36,7 @@ from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 from db import SessionLocal
 from models.outreach_activity import OutreachActivity
 from models.outreach_prospect import OutreachProspect
+from models.outreach_sending_state import OutreachSendingState
 from models.build import Build
 from models.content_idea import ContentIdea
 from models.client_draft import ClientDraft
@@ -164,10 +165,78 @@ def _today_sent_count(db) -> int:
     )
 
 
+# ── Sending kill switch — hard floor, independent of _state["paused"] ───────
+#
+# _state["paused"] (toggled via /dashboard/outreach/engine/pause) is the
+# SOFT toggle: in-memory only, resets to False on every restart/deploy.
+# OUTREACH_SENDING_ENABLED is the HARD floor: read fresh from the
+# environment on every call, so it can't be silently undone by a
+# redeploy the way the soft toggle can. Unset or not exactly "true"
+# means no send, full stop — checked at the top of both cold-outreach
+# send jobs (job_send_next_queued, job_process_followups), before any
+# scraping or DB mutation happens, so a closed gate produces zero
+# side effects, not just a skipped API call.
+_SENDING_WARMUP_START = 10
+_SENDING_WARMUP_STEP = 5
+_SENDING_WARMUP_STEP_DAYS = 7
+
+
+def _outreach_sending_enabled() -> bool:
+    enabled = os.getenv("OUTREACH_SENDING_ENABLED", "false").strip().lower() == "true"
+    _sync_sending_state(enabled)
+    return enabled
+
+
+def _sync_sending_state(enabled: bool) -> None:
+    """Tracks false->true / true->false transitions so the warmup ramp
+    has a real anchor point. A disable-then-re-enable always restarts
+    the ramp from _SENDING_WARMUP_START, not wherever it left off."""
+    db = SessionLocal()
+    try:
+        state = db.query(OutreachSendingState).filter(OutreachSendingState.id == 1).first()
+        if not state:
+            state = OutreachSendingState(id=1)
+            db.add(state)
+        if enabled and not state.enabled_since:
+            state.enabled_since = datetime.now(timezone.utc)
+            _log(f"[ramp] OUTREACH_SENDING_ENABLED=true observed — warmup ramp starts now "
+                 f"({_SENDING_WARMUP_START}/day, +{_SENDING_WARMUP_STEP}/week, cap {DAILY_SEND_LIMIT})")
+        elif not enabled and state.enabled_since:
+            state.enabled_since = None
+            _log("[ramp] OUTREACH_SENDING_ENABLED=false observed — ramp reset, next enable restarts at "
+                 f"{_SENDING_WARMUP_START}/day")
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        _log(f"[ramp] state sync error: {exc}")
+    finally:
+        db.close()
+
+
+def _current_send_cap(db) -> int:
+    """Effective daily send cap right now: DAILY_SEND_LIMIT once fully
+    warmed up, ramping from _SENDING_WARMUP_START in the weeks after
+    OUTREACH_SENDING_ENABLED was last turned on. Returns 0 if sending
+    has never been enabled (or was just reset) — _under_limit already
+    can't be reached in that state since the job-level gate returns
+    first, but this stays correct standalone regardless."""
+    state = db.query(OutreachSendingState).filter(OutreachSendingState.id == 1).first()
+    if not state or not state.enabled_since:
+        return 0
+    enabled_since = state.enabled_since
+    if enabled_since.tzinfo is None:
+        enabled_since = enabled_since.replace(tzinfo=timezone.utc)
+    days_since = (datetime.now(timezone.utc) - enabled_since).days
+    weeks_since = days_since // _SENDING_WARMUP_STEP_DAYS
+    cap = _SENDING_WARMUP_START + _SENDING_WARMUP_STEP * weeks_since
+    return min(cap, DAILY_SEND_LIMIT)
+
+
 def _under_limit(db) -> bool:
+    cap = _current_send_cap(db)
     n = _today_sent_count(db)
-    if n >= DAILY_SEND_LIMIT:
-        _log(f"Daily limit reached ({n}/{DAILY_SEND_LIMIT})")
+    if n >= cap:
+        _log(f"Daily limit reached ({n}/{cap})")
         return False
     return True
 
@@ -615,6 +684,9 @@ def job_send_next_queued() -> None:
     """SECTION 1 — Scrape + email the oldest queued prospect (respects 50/day limit)."""
     if _state["paused"]:
         return
+    if not _outreach_sending_enabled():
+        _log("sending disabled — job_send_next_queued refused (OUTREACH_SENDING_ENABLED is not 'true')")
+        return
 
     from app import (
         scrape_business_profile,
@@ -717,6 +789,9 @@ def job_send_next_queued() -> None:
 def job_process_followups() -> None:
     """SECTION 1 — Day-3 / Day-7 follow-ups. Counts toward daily limit."""
     if _state["paused"]:
+        return
+    if not _outreach_sending_enabled():
+        _log("sending disabled — job_process_followups refused (OUTREACH_SENDING_ENABLED is not 'true')")
         return
 
     from app import build_outreach_email

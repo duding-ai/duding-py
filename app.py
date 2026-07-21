@@ -68,6 +68,7 @@ from models.brand_prospect import BrandProspect
 from models.brand_outreach_email import BrandOutreachEmail
 from models.brand_deal import BrandDeal
 from models.job_health import JobHealth
+from models.outreach_sending_state import OutreachSendingState
 from models.health_baseline import HealthBaseline
 from models.health_check_run import HealthCheckRun
 from models.email_send_error import EmailSendError
