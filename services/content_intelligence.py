@@ -39,7 +39,7 @@ _SNAPSHOT_FIELDS = [
     "shares", "reposts", "saves", "profile_visits", "bio_link_taps", "follows",
     "avg_watch_time_seconds", "watched_full_pct", "retention_avg_pct",
     "skip_rate_pct", "drop_off_seconds", "total_play_time_seconds",
-    "traffic_sources", "audience",
+    "traffic_sources", "audience", "raw_extra",
 ]
 
 _EXTRACT_SYSTEM_PROMPT = (
@@ -397,19 +397,29 @@ def sync_waitlist_attribution() -> int:
 
 def sync_platform_stats() -> int:
     """
-    No-ops gracefully when no platform_credentials are connected. Once
-    connected, pulls available metrics for videos with a known
-    platform_video_id and writes a new snapshot per video.
+    Dormant unless META_INSIGHTS_ENABLED=true — same fail-closed
+    pattern as the other hard gates this session (OUTREACH_SENDING_ENABLED,
+    BRAND_DEALS_SENDING_ENABLED). No-ops gracefully when no
+    platform_credentials are connected either way. Once connected,
+    pulls available metrics for videos with a known platform_video_id
+    and writes a new snapshot per video.
 
-    NOT ACTIVE — Instagram (Meta Graph API) and TikTok (Display API)
-    both require a developer app review before they'll return real
-    data; see README "Content Intelligence — Phase 2" for the exact
-    application steps. Even once connected, these APIs only return
-    basic counts (views/likes/comments/shares) — retention curves,
-    skip rate, traffic sources, and audience breakdown are not exposed
-    by either public API, so screenshot ingestion remains the source
-    of truth for those fields indefinitely.
+    Instagram is implemented against Meta's documented Graph API
+    schema (see _fetch_instagram_media_insights) but has NOT been
+    exercised against a live token — that requires a real Meta App
+    past developer review, a separate manual step (README "Needs
+    Tommy's Hands"). TikTok remains a placeholder; its Display API
+    scope/review process hasn't been started.
+
+    Even once connected, these APIs only return basic counts
+    (views/likes/comments/shares) — retention curves, skip rate,
+    traffic sources, and audience breakdown are not exposed by either
+    public API, so screenshot ingestion remains the source of truth
+    for those fields indefinitely.
     """
+    if os.getenv("META_INSIGHTS_ENABLED", "false").strip().lower() != "true":
+        return 0
+
     db = SessionLocal()
     try:
         creds = db.query(PlatformCredentials).filter(PlatformCredentials.status == "connected").all()
@@ -432,6 +442,8 @@ def sync_platform_stats() -> int:
                     stats = _fetch_platform_stats(cred, video)
                 except Exception as exc:
                     print(f"[content_intel] platform sync error ({cred.platform} {video.id}): {exc}")
+                    cred.status = "error"
+                    cred.last_error = str(exc)[:500]
                     continue
                 if stats:
                     save_snapshot(db, video, stats)
@@ -444,9 +456,59 @@ def sync_platform_stats() -> int:
 
 
 def _fetch_platform_stats(cred: PlatformCredentials, video: ContentVideo) -> Optional[Dict[str, Any]]:
-    """Placeholder — wire up real Graph API / TikTok Display API calls
-    here once app review is approved and access_token is live."""
-    return None
+    if cred.platform == "instagram":
+        return _fetch_instagram_media_insights(cred, video)
+    return None  # TikTok Display API — not started, see README
+
+
+def _fetch_instagram_media_insights(cred: PlatformCredentials, video: ContentVideo) -> Optional[Dict[str, Any]]:
+    """
+    Meta Graph API — GET /{ig-media-id}/insights. Metric availability
+    varies by media type (video/reel/photo) and API version; this
+    requests the common set and ignores metrics the API rejects for a
+    given media type rather than failing the whole call. NOT tested
+    against a live token — no Meta App exists past developer review
+    yet, so exact metric names may need adjusting once real access
+    exists (Meta has deprecated/renamed insights metrics before).
+    """
+    import httpx
+
+    if not cred.access_token or not video.platform_video_id:
+        return None
+
+    metrics = "impressions,reach,likes,comments,shares,saved,video_views,plays"
+    try:
+        r = httpx.get(
+            f"https://graph.facebook.com/v19.0/{video.platform_video_id}/insights",
+            params={"metric": metrics, "access_token": cred.access_token},
+            timeout=20,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Instagram Insights request failed: {exc}")
+
+    if r.status_code != 200:
+        raise RuntimeError(f"Instagram Insights API {r.status_code}: {r.text[:300]}")
+
+    data = r.json().get("data", [])
+    values: Dict[str, Any] = {}
+    for entry in data:
+        name = entry.get("name")
+        entry_values = entry.get("values", [])
+        if name and entry_values:
+            values[name] = entry_values[0].get("value")
+
+    if not values:
+        return None
+
+    return {
+        "views": values.get("plays") or values.get("video_views"),
+        "accounts_reached": values.get("reach"),
+        "likes": values.get("likes"),
+        "comments": values.get("comments"),
+        "shares": values.get("shares"),
+        "saves": values.get("saved"),
+        "raw_extra": {"impressions": values.get("impressions"), "source": "meta_graph_api"},
+    }
 
 
 # ── Seed data (5 known Get CHKD videos, for first-deploy dashboard) ────────

@@ -34,9 +34,30 @@ computed engagement rates, hook/CTA comparisons, and waitlist-signup attribution
 
 ### Content Intelligence — Phase 2 (official API auto-pull)
 
-Not active yet. `platform_credentials` table + `sync_platform_stats()` in
-`services/content_intelligence.py` are scaffolded and no-op until a row with a live
-`access_token` exists.
+**Instagram OAuth + nightly sync built 2026-07-22, dormant behind `META_INSIGHTS_ENABLED`**
+(default `false` — same hard-gate pattern as every other risk dial this session, refuses
+outright rather than falling through). `platform_credentials` table +
+`sync_platform_stats()` in `services/content_intelligence.py` no-op unless that env var is
+exactly `"true"` AND a row has a live `access_token`.
+
+**Honest limitation on this one specifically**: unlike everything else built this
+session, this cannot be tested end-to-end against production data — it requires a real
+Meta App that's passed developer review, which doesn't exist yet. The OAuth flow and
+Insights fetch follow Meta's documented Graph API schema exactly, and the **dormant-gate
+behavior itself is verified** (confirmed via TestClient: not-logged-in → redirect,
+logged-in-but-disabled → clean 503, enabled-but-no-credentials → clean 503, no crashes
+in any case) — but the actual OAuth token exchange and Insights call have not been
+exercised against a live token. Metric names (`impressions`, `reach`, `video_views`,
+etc.) may need adjusting once real access exists; Meta has renamed/deprecated Insights
+metrics before.
+
+- **OAuth flow**: `GET /auth/instagram/connect` (admin-only, redirects to Meta's consent
+  screen) → `GET /auth/instagram/callback` (exchanges code → short-lived → long-lived
+  token, resolves the linked Instagram Business Account via `/me/accounts`, stores
+  everything in `platform_credentials`).
+- **Nightly sync**: `job_content_platform_sync` (3:15am UTC, already registered) calls
+  `sync_platform_stats()`, which pulls `GET /{ig-media-id}/insights` for every
+  `ContentVideo` with a known `platform_video_id` once a connected credential exists.
 
 **What each API can/can't provide, once connected:**
 
@@ -56,10 +77,20 @@ data indefinitely — neither public API exposes it.
   "Instagram Graph API" product → connect the `@getchkd` Instagram professional account →
   submit for App Review requesting `instagram_basic` + `instagram_manage_insights`
   permissions (this requires a screencast + written use-case description; Meta review
-  typically takes 3-7 business days).
+  typically takes 3-7 business days). Add the App's OAuth redirect URI as
+  `https://duding.ai/auth/instagram/callback` in the app settings — must match exactly.
+  Once approved: set `META_APP_ID`, `META_APP_SECRET`, `META_INSIGHTS_ENABLED=true` on
+  Railway, then visit `/auth/instagram/connect` while logged in to connect the account.
 - **TikTok**: developers.tiktok.com → register a developer account → Create App → apply
   for the "Display API" product with the `video.list` and `research.data.basic` scopes →
-  TikTok's review is also manual and can take 1-2 weeks.
+  TikTok's review is also manual and can take 1-2 weeks. Not started — only Instagram's
+  OAuth flow was built this session.
+
+| Variable | Required? | Default | Notes |
+|---|---|---|---|
+| `META_INSIGHTS_ENABLED` | For the whole feature to activate | `false` | Must be exactly `true` — hard gate on OAuth routes and the sync job |
+| `META_APP_ID` | For OAuth to work | unset | From the Meta App, once it exists |
+| `META_APP_SECRET` | For OAuth to work | unset | From the Meta App, once it exists |
 
 ---
 

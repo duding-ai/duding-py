@@ -21,3 +21,9 @@ class PlatformCredentials(Base):
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     last_error    = Column(String, nullable=True)
     created_at    = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Instagram-specific — the Graph API's Insights endpoint is called
+    # against the IG Business/Creator Account ID, not the access token
+    # alone. Resolved during the OAuth callback via /me/accounts ->
+    # {page-id}?fields=instagram_business_account.
+    ig_business_account_id = Column(String, nullable=True)

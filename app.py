@@ -189,6 +189,11 @@ if not engine.url.drivername.startswith("sqlite"):
             "ALTER TABLE outreach_prospects ADD COLUMN IF NOT EXISTS "
             "verification_checked_at TIMESTAMPTZ"
         ))
+        # Instagram OAuth (dormant behind META_INSIGHTS_ENABLED)
+        _conn.execute(__import__("sqlalchemy").text(
+            "ALTER TABLE platform_credentials ADD COLUMN IF NOT EXISTS "
+            "ig_business_account_id VARCHAR"
+        ))
         _conn.commit()
 
 PRIVACY_TERMS_UPDATED = "July 12, 2026"
@@ -4383,6 +4388,175 @@ async def brand_deal_run_prospector(request: Request, client_id: int, background
     from services.brand_deals import run_prospector
     background_tasks.add_task(run_prospector)
     return RedirectResponse(f"/dashboard/clients/{client_id}?tab=brand-deals&running=1", status_code=303)
+
+
+# ---------------------------------------------------------------------
+# INSTAGRAM OAUTH — Content Intelligence Phase 2 (dormant)
+#
+# Everything here is inert unless META_INSIGHTS_ENABLED is exactly
+# "true" — same fail-closed pattern as OUTREACH_SENDING_ENABLED and
+# BRAND_DEALS_SENDING_ENABLED elsewhere in this file. Cannot be
+# end-to-end tested without a real Meta App (developer app review is
+# a separate, manual step — see README "Needs Tommy's Hands"), so
+# this follows Meta's documented Graph API schema exactly but has NOT
+# been exercised against a live token. Flagging that plainly rather
+# than implying it's been verified the way everything else this
+# session has been.
+# ---------------------------------------------------------------------
+
+META_REDIRECT_URI = "https://duding.ai/auth/instagram/callback"
+META_GRAPH_VERSION = "v19.0"
+
+
+def _meta_insights_enabled() -> bool:
+    return os.getenv("META_INSIGHTS_ENABLED", "false").strip().lower() == "true"
+
+
+@app.get("/auth/instagram/connect")
+async def instagram_oauth_connect(request: Request):
+    """Admin-initiated — redirects to Meta's OAuth consent screen.
+    Dormant: refuses outright unless META_INSIGHTS_ENABLED=true."""
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+    if not _meta_insights_enabled():
+        raise HTTPException(status_code=503, detail="Instagram Insights is not enabled (META_INSIGHTS_ENABLED is not 'true').")
+
+    app_id = os.getenv("META_APP_ID", "").strip()
+    if not app_id:
+        raise HTTPException(status_code=503, detail="META_APP_ID not configured.")
+
+    scope = "instagram_basic,instagram_manage_insights,pages_show_list,business_management"
+    oauth_url = (
+        f"https://www.facebook.com/{META_GRAPH_VERSION}/dialog/oauth"
+        f"?client_id={quote(app_id)}&redirect_uri={quote(META_REDIRECT_URI, safe='')}"
+        f"&scope={quote(scope)}&response_type=code"
+    )
+    return RedirectResponse(oauth_url, status_code=302)
+
+
+@app.get("/auth/instagram/callback")
+async def instagram_oauth_callback(
+    request: Request,
+    code: str = "",
+    error: str = "",
+    error_description: str = "",
+    db: Session = Depends(get_db),
+):
+    """
+    Meta's OAuth redirect target. Dormant: refuses outright unless
+    META_INSIGHTS_ENABLED=true — does not attempt any token exchange
+    otherwise, matching the hard-gate pattern used everywhere else in
+    this codebase (no fallback path, fails closed on missing config).
+
+    On success: exchanges code -> short-lived token -> long-lived
+    token (~60 days), resolves the Instagram Business Account linked
+    to one of the user's Facebook Pages, and stores it all in
+    PlatformCredentials (client_id=1, the Get CHKD client).
+    """
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+    if not _meta_insights_enabled():
+        raise HTTPException(status_code=503, detail="Instagram Insights is not enabled (META_INSIGHTS_ENABLED is not 'true').")
+    if error:
+        raise HTTPException(status_code=400, detail=f"Instagram OAuth error: {error} — {error_description}")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing OAuth code")
+
+    app_id = os.getenv("META_APP_ID", "").strip()
+    app_secret = os.getenv("META_APP_SECRET", "").strip()
+    if not app_id or not app_secret:
+        raise HTTPException(status_code=503, detail="META_APP_ID/META_APP_SECRET not configured.")
+
+    import httpx
+    graph = f"https://graph.facebook.com/{META_GRAPH_VERSION}"
+
+    def _fail(message: str):
+        try:
+            cred = db.query(PlatformCredentials).filter(
+                PlatformCredentials.client_id == 1, PlatformCredentials.platform == "instagram",
+            ).first()
+            if not cred:
+                cred = PlatformCredentials(client_id=1, platform="instagram")
+                db.add(cred)
+            cred.status = "error"
+            cred.last_error = message[:500]
+            db.commit()
+        except Exception:
+            db.rollback()
+        raise HTTPException(status_code=502, detail=message)
+
+    try:
+        r = httpx.get(f"{graph}/oauth/access_token", params={
+            "client_id": app_id, "redirect_uri": META_REDIRECT_URI,
+            "client_secret": app_secret, "code": code,
+        }, timeout=15)
+        if r.status_code != 200:
+            return _fail(f"code exchange failed: {r.status_code} {r.text[:300]}")
+        short_token = r.json().get("access_token", "")
+
+        r2 = httpx.get(f"{graph}/oauth/access_token", params={
+            "grant_type": "fb_exchange_token", "client_id": app_id,
+            "client_secret": app_secret, "fb_exchange_token": short_token,
+        }, timeout=15)
+        if r2.status_code != 200:
+            return _fail(f"long-lived token exchange failed: {r2.status_code} {r2.text[:300]}")
+        long_data = r2.json()
+        long_token = long_data.get("access_token", "")
+        expires_in = long_data.get("expires_in")
+
+        r3 = httpx.get(f"{graph}/me/accounts", params={"access_token": long_token}, timeout=15)
+        if r3.status_code != 200:
+            return _fail(f"could not list Facebook Pages: {r3.status_code} {r3.text[:300]}")
+        pages = r3.json().get("data", [])
+
+        ig_account_id = None
+        for page in pages:
+            page_id = page.get("id")
+            if not page_id:
+                continue
+            r4 = httpx.get(f"{graph}/{page_id}", params={
+                "fields": "instagram_business_account", "access_token": long_token,
+            }, timeout=15)
+            if r4.status_code == 200:
+                ig_data = r4.json().get("instagram_business_account")
+                if ig_data and ig_data.get("id"):
+                    ig_account_id = ig_data["id"]
+                    break
+
+        if not ig_account_id:
+            return _fail(
+                "No Instagram Business Account linked to any Facebook Page you manage. "
+                "The IG account must be a Business/Creator account linked to a Facebook Page first."
+            )
+
+        expires_at = (
+            datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+            if expires_in else None
+        )
+
+        cred = db.query(PlatformCredentials).filter(
+            PlatformCredentials.client_id == 1, PlatformCredentials.platform == "instagram",
+        ).first()
+        if not cred:
+            cred = PlatformCredentials(client_id=1, platform="instagram")
+            db.add(cred)
+        cred.access_token = long_token
+        cred.ig_business_account_id = ig_account_id
+        cred.expires_at = expires_at
+        cred.status = "connected"
+        cred.last_error = None
+        db.commit()
+
+        return HTMLResponse(
+            "<h1>Instagram connected</h1>"
+            f"<p>Business Account ID: {ig_account_id}</p>"
+            "<p>You can close this tab. Nightly sync picks this up automatically once "
+            "META_INSIGHTS_ENABLED stays true.</p>"
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        return _fail(f"unexpected error during OAuth exchange: {exc}")
 
 
 # ---------------------------------------------------------------------
