@@ -125,6 +125,48 @@ def _check_ramp_intact() -> Dict[str, Any]:
     return {"met": True, "detail": "sending is off, ramp has not started — will begin at 10/day the moment OUTREACH_SENDING_ENABLED=true is set"}
 
 
+def purge_generic_from_sendable_queue() -> int:
+    """
+    Retroactively applies the hard-exclusion rule to prospects already
+    sitting in a sendable status from BEFORE the targeting rebuild
+    shipped. Necessary because the exclusion logic lives inside
+    job_send_next_queued/job_process_followups, which don't execute at
+    all while OUTREACH_SENDING_ENABLED=false — meaning the "no generic
+    address in the sendable queue" re-enable criterion could never
+    become true before re-enabling under the original design (nothing
+    would ever touch the leaked rows to reclassify them). Safe to run
+    any time, including while sending is off — it never sends
+    anything, only reclassifies status/confidence fields.
+    """
+    db = SessionLocal()
+    try:
+        leaked = (
+            db.query(OutreachProspect)
+            .filter(
+                OutreachProspect.status.in_(["queued", "outreach_pending", "follow_up_pending"]),
+                OutreachProspect.email_quality == "generic",
+            )
+            .all()
+        )
+        for p in leaked:
+            p.status = "excluded_generic_address"
+            p.confidence_tier = "none"
+            p.confidence_score = 0
+            p.confidence_reasons = ["excluded: generic role address — structurally excluded from cold outreach per the 2026-07-22 targeting rebuild"]
+            p.email_note = "generic role address — hard-excluded from cold outreach targeting (retroactive purge)"
+            db.add(p)
+        db.commit()
+        n = len(leaked)
+        print(f"[agent_tasks] purged {n} generic-quality prospect(s) from the sendable queue")
+        return n
+    except Exception as exc:
+        db.rollback()
+        print(f"[agent_tasks] purge error: {exc}")
+        return 0
+    finally:
+        db.close()
+
+
 def _check_named_person_filter_active() -> Dict[str, Any]:
     db = SessionLocal()
     try:

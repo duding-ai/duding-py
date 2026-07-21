@@ -253,6 +253,17 @@ async def _seed_agent_tasks():
     seed_reenable_task()
 
 
+@app.on_event("startup")
+async def _purge_generic_from_queue():
+    """Idempotent — safe to run every restart. Catches any prospect
+    that reached a sendable status before the 2026-07-22 targeting
+    rebuild (or via any future edge case) without needing
+    OUTREACH_SENDING_ENABLED=true, since the job-level exclusion logic
+    only runs when that gate is open. See services/agent_tasks.py."""
+    from services.agent_tasks import purge_generic_from_sendable_queue
+    purge_generic_from_sendable_queue()
+
+
 @app.on_event("shutdown")
 async def _engine_shutdown():
     from outreach_engine import stop_engine
