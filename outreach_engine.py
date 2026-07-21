@@ -187,6 +187,15 @@ def _outreach_sending_enabled() -> bool:
     return enabled
 
 
+def _min_confidence_tier() -> str:
+    """High-tier only by default — Part 3 of the contact-discovery
+    rebuild. Lower this by hand (env var, not auto-detected) once the
+    bounce rate at the current tier has proven out over a real
+    sending window."""
+    tier = os.getenv("OUTREACH_MIN_CONFIDENCE_TIER", "high").strip().lower()
+    return tier if tier in ("low", "medium", "high") else "high"
+
+
 def _sync_sending_state(enabled: bool) -> None:
     """Tracks false->true / true->false transitions so the warmup ramp
     has a real anchor point. A disable-then-re-enable always restarts
@@ -738,13 +747,46 @@ def job_send_next_queued() -> None:
         # at all, so there's no point sending (and no point holding for review).
         mx_ok = bool(to_email) and has_mx_record(to_email)
 
-        # Send to every prospect with a found, MX-valid email, generic inbox or not.
-        # email_quality still records direct vs generic for tracking (see daily briefing).
+        # Hard verification gate (root-cause fix for the 22.6% bounce rate —
+        # MX-only proves the domain has SOME mail server, not that this
+        # specific mailbox exists). Fails closed: any error, timeout, or
+        # ambiguous result (catch-all domain) is NOT a pass, same pattern
+        # as the OUTREACH_SENDING_ENABLED kill switch — no fallback path
+        # to "send anyway."
+        verification = {"verified": False, "reason": "no_email_found", "method": "none"}
+        confidence = {"score": 0, "tier": "low", "reasons": ["no email to score"]}
+        if to_email and mx_ok:
+            from services.email_verification import verify_email_deliverable, score_confidence
+            verification = verify_email_deliverable(to_email)
+            confidence = score_confidence(to_email, email_quality, verification)
+
+        prospect.confidence_tier         = confidence["tier"]
+        prospect.confidence_score        = confidence["score"]
+        prospect.confidence_reasons      = confidence["reasons"]
+        prospect.verification_status     = verification["reason"]
+        prospect.verification_checked_at = datetime.now(timezone.utc)
+
+        min_tier  = _min_confidence_tier()
+        tier_rank = {"low": 0, "medium": 1, "high": 2}
+        send_allowed = (
+            bool(to_email) and mx_ok and verification.get("verified")
+            and tier_rank.get(confidence["tier"], 0) >= tier_rank.get(min_tier, 2)
+        )
+
         if to_email and not mx_ok:
             prospect.status     = "invalid"
             prospect.email_note = "no MX record — domain cannot receive email"
             db.commit()
             _log(f"✗ {biz_name} → {to_email} [invalid — no MX record]")
+            return
+        elif to_email and not send_allowed:
+            prospect.status     = "verification_failed"
+            prospect.email_note = f"verification gate refused: {verification.get('reason')} (confidence={confidence['tier']})"
+            db.commit()
+            _log(
+                f"verification refused — {biz_name} → {to_email} "
+                f"[{verification.get('reason')}, confidence={confidence['tier']}, min required={min_tier}]"
+            )
             return
         elif to_email:
             prospect.status             = "outreach_pending"
@@ -757,12 +799,12 @@ def job_send_next_queued() -> None:
             prospect.status = "pending_review"
         db.commit()
 
-        if to_email:
+        if to_email and send_allowed:
             ok = _send(to_email, subject, body, from_name="Tommy")
             _state["last_send_at"] = datetime.now(timezone.utc)
             tag = "generic" if is_generic else "direct"
-            _log(f"{'✓' if ok else '✗'} {biz_name} → {to_email} [{tag}]")
-        else:
+            _log(f"{'✓' if ok else '✗'} {biz_name} → {to_email} [{tag}, confidence={confidence['tier']}]")
+        elif not to_email:
             _log(f"✋ {biz_name} — no email found [held for review]")
 
         # SECTION 8 — Content angle if business mentions years of experience
@@ -820,6 +862,39 @@ def job_process_followups() -> None:
                 db.commit()
                 continue
 
+            # Re-verify before every follow-up — this is exactly the gap
+            # that let already-bounced addresses get hit again by
+            # follow-up #2 in production (same address, multiple bounce
+            # events, weeks apart). A prospect that was sendable on the
+            # initial touch is not guaranteed sendable now.
+            from services.email_verification import verify_email_deliverable, score_confidence
+            verification = verify_email_deliverable(p.email)
+            confidence = score_confidence(p.email, p.email_quality, verification)
+
+            p.confidence_tier         = confidence["tier"]
+            p.confidence_score        = confidence["score"]
+            p.confidence_reasons      = confidence["reasons"]
+            p.verification_status     = verification["reason"]
+            p.verification_checked_at = now
+
+            min_tier  = _min_confidence_tier()
+            tier_rank = {"low": 0, "medium": 1, "high": 2}
+            send_allowed = (
+                verification.get("verified")
+                and tier_rank.get(confidence["tier"], 0) >= tier_rank.get(min_tier, 2)
+            )
+
+            if not send_allowed:
+                p.status = "verification_failed"
+                p.email_note = f"verification gate refused follow-up: {verification.get('reason')} (confidence={confidence['tier']})"
+                db.add(p)
+                db.commit()
+                _log(
+                    f"verification refused — follow-up to {p.email} "
+                    f"[{verification.get('reason')}, confidence={confidence['tier']}, min required={min_tier}]"
+                )
+                continue
+
             prefix = "Following up" if p.follow_up_count == 0 else "One last note"
             _, body = build_outreach_email(
                 {
@@ -848,7 +923,7 @@ def job_process_followups() -> None:
                 subject=subject, body_preview=body[:180], status="sent",
             ))
             db.commit()
-            _log(f"{'✓' if ok else '✗'} Follow-up #{p.follow_up_count} → {p.email}")
+            _log(f"{'✓' if ok else '✗'} Follow-up #{p.follow_up_count} → {p.email} [confidence={confidence['tier']}]")
 
     except Exception as exc:
         db.rollback()

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -29,6 +29,13 @@ class OutreachProspect(Base):
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    # Contact discovery rebuild — hard verification gate + confidence scoring
+    confidence_tier = Column(String, nullable=True)          # high | medium | low
+    confidence_score = Column(Integer, nullable=True)          # 0-100
+    confidence_reasons = Column(JSON, nullable=True)            # list[str] — see services/email_verification.py
+    verification_status = Column(String, nullable=True)         # verified | catch_all_domain | no_mx_record | smtp_rejected_* | smtp_unreachable_* | ...
+    verification_checked_at = Column(DateTime(timezone=True), nullable=True)
 
     activities = relationship(
         "OutreachActivity",

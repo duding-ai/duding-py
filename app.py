@@ -167,6 +167,27 @@ if not engine.url.drivername.startswith("sqlite"):
             "ALTER TABLE builds ADD COLUMN IF NOT EXISTS "
             "retainer_upsell_sent BOOLEAN NOT NULL DEFAULT false"
         ))
+        # Confidence scoring + hard verification gate (contact discovery rebuild)
+        _conn.execute(__import__("sqlalchemy").text(
+            "ALTER TABLE outreach_prospects ADD COLUMN IF NOT EXISTS "
+            "confidence_tier VARCHAR"
+        ))
+        _conn.execute(__import__("sqlalchemy").text(
+            "ALTER TABLE outreach_prospects ADD COLUMN IF NOT EXISTS "
+            "confidence_score INTEGER"
+        ))
+        _conn.execute(__import__("sqlalchemy").text(
+            "ALTER TABLE outreach_prospects ADD COLUMN IF NOT EXISTS "
+            "confidence_reasons JSONB"
+        ))
+        _conn.execute(__import__("sqlalchemy").text(
+            "ALTER TABLE outreach_prospects ADD COLUMN IF NOT EXISTS "
+            "verification_status VARCHAR"
+        ))
+        _conn.execute(__import__("sqlalchemy").text(
+            "ALTER TABLE outreach_prospects ADD COLUMN IF NOT EXISTS "
+            "verification_checked_at TIMESTAMPTZ"
+        ))
         _conn.commit()
 
 PRIVACY_TERMS_UPDATED = "July 12, 2026"
@@ -739,6 +760,43 @@ def _extract_domain_emails(html: str, base_domain: str) -> List[str]:
     return emails
 
 
+def _extract_any_emails(html: str) -> List[str]:
+    """Like _extract_domain_emails but without the base_domain filter —
+    used for third-party pages (Facebook) where a business's contact
+    email won't share its own website's domain."""
+    soup = BeautifulSoup(html, "lxml")
+    emails: List[str] = []
+    seen: Set[str] = set()
+
+    def _consider(raw: str) -> None:
+        if "@" not in raw or raw in seen:
+            return
+        local = raw.split("@", 1)[0]
+        if local in _PLACEHOLDER_LOCAL:
+            return
+        seen.add(raw)
+        emails.append(raw)
+
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if href.lower().startswith("mailto:"):
+            _consider(href[7:].split("?")[0].strip().lower().rstrip("."))
+    for m in _EMAIL_RE.finditer(soup.get_text(" ")):
+        _consider(m.group(0).lower().rstrip("."))
+    return emails
+
+
+def _find_facebook_link(html: str, base_url: str) -> str:
+    soup = BeautifulSoup(html, "lxml")
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if href.startswith("/"):
+            href = urljoin(base_url, href)
+        if "facebook.com" in href.lower():
+            return href
+    return ""
+
+
 def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
     """
     Fetch homepage + About/Contact/Team pages and return the best
@@ -749,6 +807,14 @@ def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
     Never fabricates an address (no more info@{domain} guessing) — if
     nothing is actually published on the site, returns "" so the caller
     routes the prospect to pending_review instead of emailing a guess.
+
+    Discovery upgrade (contact discovery rebuild): if no on-site pages
+    yield anything, falls back to the business's linked Facebook page
+    (About section is sometimes the only place a small business
+    publishes a contact email). Google Business listings are NOT
+    covered — there's no ToS-compliant way to scrape those without a
+    paid Google Places API key, which this codebase doesn't have; see
+    README "Needs Tommy's Hands" if that channel is wanted later.
     """
     try:
         parsed = urlparse(url if "://" in url else "https://" + url)
@@ -763,30 +829,55 @@ def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
 
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     all_emails: List[str] = []
+    homepage_html = ""
+    facebook_url = ""
 
     for page in [url, f"{base}/about", f"{base}/about-us",
                  f"{base}/contact", f"{base}/contact-us",
+                 f"{base}/get-in-touch", f"{base}/reach-us",
                  f"{base}/team", f"{base}/our-team",
-                 f"{base}/staff", f"{base}/leadership"]:
+                 f"{base}/staff", f"{base}/leadership",
+                 f"{base}/locations", f"{base}/service-areas"]:
         try:
             r = requests.get(page, headers={"User-Agent": ua}, timeout=8,
                              allow_redirects=True)
             if r.status_code == 200:
                 all_emails.extend(_extract_domain_emails(r.text, domain))
+                if page == url:
+                    homepage_html = r.text
         except Exception:
             continue
 
-    if not all_emails:
-        return "", "none", "no email found on site — not sending a guess"
+    if all_emails:
+        seen: Set[str] = set()
+        deduped = [e for e in all_emails if not (e in seen or seen.add(e))]
+        deduped.sort(key=_email_priority)
+        best = deduped[0]
+        quality = "direct" if _email_priority(best) < 2 else "generic"
+        note = "" if quality == "direct" else "generic email — verify before sending"
+        return best, quality, note
 
-    seen: Set[str] = set()
-    deduped = [e for e in all_emails if not (e in seen or seen.add(e))]
-    deduped.sort(key=_email_priority)
+    # Nothing on-site — try the linked Facebook page, if any.
+    if homepage_html:
+        try:
+            facebook_url = _find_facebook_link(homepage_html, base)
+        except Exception:
+            facebook_url = ""
 
-    best = deduped[0]
-    quality = "direct" if _email_priority(best) < 2 else "generic"
-    note = "" if quality == "direct" else "generic email — verify before sending"
-    return best, quality, note
+    if facebook_url:
+        try:
+            r = requests.get(facebook_url, headers={"User-Agent": ua}, timeout=8, allow_redirects=True)
+            if r.status_code == 200:
+                fb_emails = _extract_any_emails(r.text)
+                if fb_emails:
+                    best = sorted(fb_emails, key=_email_priority)[0]
+                    quality = "direct" if _email_priority(best) < 2 else "generic"
+                    note = f"found via linked Facebook page ({facebook_url})"
+                    return best, quality, note
+        except Exception:
+            pass
+
+    return "", "none", "no email found on site or linked Facebook page — not sending a guess"
 
 
 def _get_outreach_email_for_target(target: str, resolved_url: str) -> Tuple[str, str, str]:
