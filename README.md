@@ -123,6 +123,29 @@ actually been exploited.
 
 ---
 
+## Main Outreach Sending Kill Switch
+
+**2026-07-21 incident:** the outreach sender had no durable off switch. `_state["paused"]`
+(toggled via `/dashboard/outreach/engine/pause`) is in-memory only — it resets to `False`
+on every restart/deploy, so it can't survive the thing it's meant to guard against. Fixed
+with the same pattern as the Brand Deals gate:
+
+- `OUTREACH_SENDING_ENABLED` (default `false`, must be exactly `"true"`) is checked at the
+  top of both cold-outreach send jobs — `job_send_next_queued` and `job_process_followups`
+  in `outreach_engine.py` — before any scraping or DB mutation happens. A closed gate now
+  produces zero side effects (no status change, no `OutreachActivity` row), not just a
+  skipped API call. Read fresh from the environment on every call, so it's the hard floor
+  underneath the soft in-memory pause, independent of it, and survives every restart/deploy.
+- **Warmup ramp**: re-enabling requires flipping the env var by hand. `OutreachSendingState`
+  (singleton row) records when that happens, and `_current_send_cap()` ramps the effective
+  daily cap 10/day for the first week, +5/day per week after, capped at `DAILY_SEND_LIMIT`
+  (50) — reached after 8 weeks. Disabling and re-enabling always restarts the ramp from
+  10/day; it never resumes wherever it left off.
+
+| Variable | Required? | Default | Notes |
+|---|---|---|---|
+| `OUTREACH_SENDING_ENABLED` | For cold-outreach sending to run at all | `false` | Must be exactly `true` — hard floor, independent of the dashboard pause toggle |
+
 ## Needs Tommy's Hands
 
 ### 1. `partners.getchkd.app` DNS setup (~10 min, Namecheap + Resend)
