@@ -69,6 +69,7 @@ from models.brand_outreach_email import BrandOutreachEmail
 from models.brand_deal import BrandDeal
 from models.job_health import JobHealth
 from models.outreach_sending_state import OutreachSendingState
+from models.agent_task import AgentTask
 from models.health_baseline import HealthBaseline
 from models.health_check_run import HealthCheckRun
 from models.email_send_error import EmailSendError
@@ -243,6 +244,13 @@ async def _seed_health_baselines():
     """Idempotent per (agent, metric) — see services/health_monitor.py."""
     from services.health_monitor import seed_health_baselines
     seed_health_baselines()
+
+
+@app.on_event("startup")
+async def _seed_agent_tasks():
+    """Idempotent — see services/agent_tasks.py."""
+    from services.agent_tasks import seed_reenable_task
+    seed_reenable_task()
 
 
 @app.on_event("shutdown")
@@ -797,6 +805,48 @@ def _find_facebook_link(html: str, base_url: str) -> str:
     return ""
 
 
+_OWNER_NAME_RE = re.compile(
+    r"\b(?i:owner|founder|president|ceo|proprietor)\b\s*[:\-–,]?\s*"
+    r"([A-Z][a-zA-Z'-]+)\s+([A-Z][a-zA-Z'-]+)"
+)
+_PLACEHOLDER_NAME_WORDS = frozenset({"the", "and", "our", "your", "us", "we"})
+
+
+def _extract_owner_name(text: str) -> Optional[Tuple[str, str]]:
+    """Best-effort: 'Owner: John Smith' / 'Founder - Jane Doe' style
+    pattern near an ownership keyword. Returns (first, last) or None.
+    Used only to CONSTRUCT candidate addresses that then go through
+    verify_email_deliverable() before ever being trusted — this is the
+    one place this pipeline builds a guess instead of scraping a
+    published address, and it's safe now specifically because nothing
+    downstream accepts an unverified address regardless of source."""
+    m = _OWNER_NAME_RE.search(text)
+    if not m:
+        return None
+    first, last = m.group(1), m.group(2)
+    if first.lower() in _PLACEHOLDER_NAME_WORDS or last.lower() in _PLACEHOLDER_NAME_WORDS:
+        return None
+    return first, last
+
+
+def _construct_candidate_addresses(first: str, last: str, domain: str) -> List[str]:
+    first, last = first.lower(), last.lower()
+    return [
+        f"{first}@{domain}",
+        f"{first}.{last}@{domain}",
+        f"{first[0]}{last}@{domain}",
+        f"{first}{last[0]}@{domain}",
+    ]
+
+
+def _verify_first_candidate(candidates: List[str]) -> Optional[str]:
+    from services.email_verification import verify_email_deliverable
+    for candidate in candidates:
+        if verify_email_deliverable(candidate).get("verified"):
+            return candidate
+    return None
+
+
 def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
     """
     Fetch homepage + About/Contact/Team pages and return the best
@@ -804,17 +854,37 @@ def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
     Returns (email, quality, note) — quality is 'direct' or 'generic'.
     Priority: owner/founder/ceo > named person (john@co.com) > generic (info@, contact@).
 
-    Never fabricates an address (no more info@{domain} guessing) — if
-    nothing is actually published on the site, returns "" so the caller
-    routes the prospect to pending_review instead of emailing a guess.
+    Never fabricates an address from a domain guess (no more
+    info@{domain}) — if nothing can be found OR verified, returns ""
+    so the caller routes the prospect to pending_review.
 
-    Discovery upgrade (contact discovery rebuild): if no on-site pages
-    yield anything, falls back to the business's linked Facebook page
-    (About section is sometimes the only place a small business
-    publishes a contact email). Google Business listings are NOT
-    covered — there's no ToS-compliant way to scrape those without a
-    paid Google Places API key, which this codebase doesn't have; see
-    README "Needs Tommy's Hands" if that channel is wanted later.
+    Targeting rebuild (2026-07-22): generic role addresses
+    (info@/contact@/support@) structurally don't accept cold outreach
+    (95.5% of the bounce autopsy) — the send pipeline hard-excludes
+    them regardless of what this function returns (see
+    job_send_next_queued). So a generic hit here is no longer good
+    enough to stop looking: before settling for one, this function
+    tries to find an owner/founder NAME in the same page text already
+    fetched, construct candidate named-person addresses from it, and
+    verify each via SMTP before trusting any of them.
+
+    Channels evaluated for named-person discovery and NOT built,
+    with the real reason why (tested directly, not assumed):
+      - LinkedIn: the actual /people/ page (where leadership names
+        live) redirects straight to a login wall for unauthenticated
+        requests. The public company page is SEO boilerplate only.
+      - Google Business "owner" field: doesn't exist in the public
+        Place Details schema (name/address/phone/hours/reviews only)
+        or the public-facing listing — ownership is private to the
+        verified account holder.
+      - Facebook Page admin names: deliberately hidden by Facebook
+        since 2018, specifically to prevent this kind of scraping.
+      - State contractor licensing databases (e.g. Texas TDLR): real,
+        public, ToS-compliant data — but TDLR's actual search is a
+        legacy ASP form system that needs proper per-state reverse
+        engineering to query reliably, which is a real follow-up
+        project, not something to half-build under time pressure.
+        See README "Needs Tommy's Hands".
     """
     try:
         parsed = urlparse(url if "://" in url else "https://" + url)
@@ -829,6 +899,7 @@ def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
 
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     all_emails: List[str] = []
+    all_page_text = ""
     homepage_html = ""
     facebook_url = ""
 
@@ -843,11 +914,13 @@ def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
                              allow_redirects=True)
             if r.status_code == 200:
                 all_emails.extend(_extract_domain_emails(r.text, domain))
+                all_page_text += " " + BeautifulSoup(r.text, "lxml").get_text(" ")
                 if page == url:
                     homepage_html = r.text
         except Exception:
             continue
 
+    best, quality, note = "", "none", "no email found on site — not sending a guess"
     if all_emails:
         seen: Set[str] = set()
         deduped = [e for e in all_emails if not (e in seen or seen.add(e))]
@@ -855,9 +928,20 @@ def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
         best = deduped[0]
         quality = "direct" if _email_priority(best) < 2 else "generic"
         note = "" if quality == "direct" else "generic email — verify before sending"
-        return best, quality, note
 
-    # Nothing on-site — try the linked Facebook page, if any.
+    if quality == "direct":
+        return best, quality, note  # already the best possible outcome
+
+    # Only a generic (or no) address so far — hunt for a named-person
+    # address before settling. Try the owner-name pattern first.
+    owner = _extract_owner_name(all_page_text)
+    if owner:
+        candidates = _construct_candidate_addresses(owner[0], owner[1], domain)
+        verified = _verify_first_candidate(candidates)
+        if verified:
+            return verified, "direct", f"constructed from on-page owner name ({owner[0]} {owner[1]}) and SMTP-verified"
+
+    # Still nothing better — try the linked Facebook page.
     if homepage_html:
         try:
             facebook_url = _find_facebook_link(homepage_html, base)
@@ -868,16 +952,29 @@ def _scrape_contact_email(url: str) -> Tuple[str, str, str]:
         try:
             r = requests.get(facebook_url, headers={"User-Agent": ua}, timeout=8, allow_redirects=True)
             if r.status_code == 200:
+                fb_text = BeautifulSoup(r.text, "lxml").get_text(" ")
+                fb_owner = _extract_owner_name(fb_text)
+                if fb_owner:
+                    candidates = _construct_candidate_addresses(fb_owner[0], fb_owner[1], domain)
+                    verified = _verify_first_candidate(candidates)
+                    if verified:
+                        return verified, "direct", f"constructed from Facebook-page owner name ({fb_owner[0]} {fb_owner[1]}) and SMTP-verified"
+
                 fb_emails = _extract_any_emails(r.text)
-                if fb_emails:
-                    best = sorted(fb_emails, key=_email_priority)[0]
-                    quality = "direct" if _email_priority(best) < 2 else "generic"
-                    note = f"found via linked Facebook page ({facebook_url})"
-                    return best, quality, note
+                if fb_emails and quality != "generic":
+                    # Only upgrade to a Facebook-found address if we don't
+                    # already have an on-site generic one to fall back to.
+                    fb_best = sorted(fb_emails, key=_email_priority)[0]
+                    fb_quality = "direct" if _email_priority(fb_best) < 2 else "generic"
+                    return fb_best, fb_quality, f"found via linked Facebook page ({facebook_url})"
         except Exception:
             pass
 
-    return "", "none", "no email found on site or linked Facebook page — not sending a guess"
+    # Nothing named-person found anywhere. Return whatever generic
+    # address exists (if any) for visibility/reporting — the send
+    # pipeline hard-excludes generic quality regardless, per the
+    # 2026-07-22 targeting rebuild.
+    return best, quality, note
 
 
 def _get_outreach_email_for_target(target: str, resolved_url: str) -> Tuple[str, str, str]:

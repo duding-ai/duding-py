@@ -121,18 +121,29 @@ def verify_email_deliverable(email: str, timeout: int = 10) -> Dict[str, Any]:
 def score_confidence(email: str, email_quality: Optional[str], verification: Dict[str, Any]) -> Dict[str, Any]:
     """
     source quality + verification result + pattern risk -> 0-100 score
-    -> high/medium/low tier. Persisted per-prospect so the sender can
-    enforce a minimum tier (see OUTREACH_MIN_CONFIDENCE_TIER).
+    -> high/medium/low/none tier. Persisted per-prospect so the sender
+    can enforce a minimum tier (see OUTREACH_MIN_CONFIDENCE_TIER).
+
+    Targeting rebuild (2026-07-22): generic role addresses are
+    structurally excluded, full stop — 95.5% of the bounce autopsy was
+    exactly this category, and no verification result changes that
+    conclusion. tier="none" here is a hard floor the job layer treats
+    as "never queue this," not just a low score to weigh against
+    other signals.
     """
+    if email_quality == "generic":
+        return {
+            "score": 0, "tier": "none",
+            "reasons": ["excluded: generic role address (info@/support@/etc.) — "
+                        "structurally excluded from cold outreach per the 2026-07-22 targeting rebuild"],
+        }
+
     score = 0
     reasons = []
 
     if email_quality == "direct":
         score += 40
         reasons.append("+40 source: named-person address")
-    elif email_quality == "generic":
-        score += 10
-        reasons.append("+10 source: generic role address")
     else:
         reasons.append("+0 source: no quality signal recorded")
 

@@ -254,6 +254,54 @@ the upgraded `_scrape_contact_email` automatically.
 |---|---|---|---|
 | `OUTREACH_MIN_CONFIDENCE_TIER` | No | `high` | `low`\|`medium`\|`high` — minimum tier allowed to send |
 
+### Targeting strategy rebuild (2026-07-22)
+
+Given the autopsy finding (95.5% of bounces were generic role addresses), generic quality
+is now a **hard exclusion**, not just a low score: `score_confidence()` returns
+`tier="none"` for any `email_quality == "generic"` address unconditionally — verification
+result doesn't matter, a generic address never queues. Prospects that hit this get a
+dedicated status, `excluded_generic_address`, distinct from `verification_failed` (which
+means a real attempt was made and failed) — this one was never a candidate at all. Wired
+into both `job_send_next_queued` and `job_process_followups`.
+
+**Named-person discovery — what's real, tested directly rather than assumed:**
+
+| Channel | Status | Why |
+|---|---|---|
+| On-page owner-name extraction ("Owner: John Smith" near an ownership keyword) + pattern-constructed candidate addresses, SMTP-verified before use | **Built** | Real, no new dependency. Safe specifically because nothing downstream accepts an unverified address regardless of source — a constructed guess and a scraped address are held to the identical bar. |
+| LinkedIn scraping | **Not built** | Tested directly: the actual `/people/` page (where leadership names live) redirects straight to a login wall for unauthenticated requests. The public company page is SEO boilerplate with zero leadership data. |
+| Google Business "owner" field | **Not built — doesn't exist** | Google's public Place Details schema (name/address/phone/hours/reviews/website) has no owner/manager field. Business Profile ownership is private to the verified account holder, full stop — not an API-key limitation. |
+| Facebook Page admin names | **Not built — doesn't exist** | Facebook has deliberately hidden Page admin identities from the public since 2018, specifically to prevent this kind of scraping. |
+| State contractor licensing databases (e.g. Texas TDLR) | **Not built — real but not attempted** | Genuinely public, ToS-compliant data. TDLR's actual search is a legacy ASP form system (`SearchResultsListBrowse.asp`) that needs proper reverse-engineering per state to query reliably — a real follow-up project worth scoping proper, not something to half-build under time pressure. See "Needs Tommy's Hands." |
+
+**Named-person hit rate** (production, current state): of all 570 original prospects,
+**35 have a named-person (`direct`-quality) address** — the pre-existing 34 from all prior
+scraping activity, +1 new from this session's discovery rerun (`bugs@bugbustersusa.com`).
+184 have (only) a generic address — now hard-excluded, never queued, regardless of prior
+status. 310 still have no contact found at all. The other discovery-rerun find from the
+previous pass, `info@kyzarairconditioning.com`, was generic — it's now correctly
+re-classified `tier=none` / `excluded_generic_address` under this rule, not counted as a
+named-person hit.
+
+### Agent Task Queue
+
+New `agent_tasks` table (`services/agent_tasks.py`) — a durable checklist for work gated
+on a human decision at a specific date, distinct from a scheduler job (runs
+automatically) or a dashboard action (needs a click right now). Seeded once at startup,
+idempotent.
+
+**Filed**: "Re-enable outreach sending (post-rest-period gate)" — `status=human_gated`,
+`due_date=2026-08-04`, three criteria:
+1. Bounce rate <5% for 3 consecutive days
+2. Warmup ramp confirmed (rest period intact, ramp not prematurely started)
+3. Named-person-only filter confirmed active (no generic-quality prospect sitting in a
+   sendable status)
+
+`check_reenable_criteria()` evaluates all three against real data on demand and persists
+the result onto the task row — it **never** flips `status` itself; re-enabling
+`OUTREACH_SENDING_ENABLED` stays a human call by design, same philosophy as every other
+risk dial this session.
+
 ### Resend domain health (duding.ai) — no sends performed for this check
 
 Pulled directly from the Resend API — domain status, and a full daily bounce/complaint
@@ -356,17 +404,29 @@ now lives at the separate path `/dashboard/content-intel` specifically to avoid 
 with this route) or Brand Deals. Flagging since it surfaced during this session's
 verification pass, not something introduced by it.
 
-### 5. Google Business listings as a contact-discovery channel (optional)
+### 5. Google Business listings — correction from the earlier note above
 
-Not implemented — there's no ToS-compliant way to scrape a business's Google Business
-Profile without Google's Places API, which requires a Google Cloud project, billing
-enabled, and an API key (Places API has a per-request cost after a monthly free tier).
-If this channel is wanted, get a Places API key and set `GOOGLE_PLACES_API_KEY` on
-Railway; the lookup itself (Place Details request by business name + location) is a
-small, contained addition to `_scrape_contact_email` once the key exists. Not started
-without that credential since it's a new paid dependency, not a code decision.
+Previously flagged as "needs a Places API key." Checked again during the 2026-07-22
+targeting rebuild: **the owner/manager name isn't in the public schema at all**, key or
+no key — Place Details returns name/address/phone/hours/reviews/website, nothing about
+who owns or manages the listing. A Places API key would still be useful for basic
+listing data (confirming a business is real/active, phone, hours) but won't ever produce
+a named-person contact — that's not a paid-tier gap, it's not public data anywhere in
+Google's system.
 
-### 6. Outreach rest period before re-enabling
+### 6. State contractor licensing databases as a named-person discovery channel
+
+Real, public, ToS-compliant — many states (Texas TDLR, Florida DBPR, California CSLB,
+etc.) publish the licensed individual's name alongside the business name for exactly the
+trades this pipeline targets. Texas TDLR's public search
+(`tdlr.texas.gov/LicenseSearch/`) is confirmed to exist and take a POST search, but it's
+a legacy ASP-based system without a clean business-name -> licensee-name API — properly
+integrating it (and any other state) needs dedicated scoping (which trades' license types
+map to which search form, pagination, rate limits) rather than a rushed add. Worth
+prioritizing given how Texas-heavy the current prospect pool is, if named-person yield
+needs to go materially higher than the current ~6% (35/570).
+
+### 7. Outreach rest period before re-enabling
 
 Per the domain-health verdict above: recommend holding `OUTREACH_SENDING_ENABLED=false`
 for 2 weeks minimum from 2026-07-21 before flipping it (and setting

@@ -767,10 +767,10 @@ def job_send_next_queued() -> None:
         prospect.verification_checked_at = datetime.now(timezone.utc)
 
         min_tier  = _min_confidence_tier()
-        tier_rank = {"low": 0, "medium": 1, "high": 2}
+        tier_rank = {"none": -1, "low": 0, "medium": 1, "high": 2}
         send_allowed = (
             bool(to_email) and mx_ok and verification.get("verified")
-            and tier_rank.get(confidence["tier"], 0) >= tier_rank.get(min_tier, 2)
+            and tier_rank.get(confidence["tier"], -1) >= tier_rank.get(min_tier, 2)
         )
 
         if to_email and not mx_ok:
@@ -778,6 +778,15 @@ def job_send_next_queued() -> None:
             prospect.email_note = "no MX record — domain cannot receive email"
             db.commit()
             _log(f"✗ {biz_name} → {to_email} [invalid — no MX record]")
+            return
+        elif to_email and confidence["tier"] == "none":
+            # Hard exclusion (targeting rebuild) — generic role address.
+            # Distinct status from verification_failed: this was never
+            # a candidate to begin with, regardless of deliverability.
+            prospect.status     = "excluded_generic_address"
+            prospect.email_note = "generic role address — hard-excluded from cold outreach targeting"
+            db.commit()
+            _log(f"excluded — {biz_name} → {to_email} [generic role address, never queued]")
             return
         elif to_email and not send_allowed:
             prospect.status     = "verification_failed"
@@ -878,13 +887,20 @@ def job_process_followups() -> None:
             p.verification_checked_at = now
 
             min_tier  = _min_confidence_tier()
-            tier_rank = {"low": 0, "medium": 1, "high": 2}
+            tier_rank = {"none": -1, "low": 0, "medium": 1, "high": 2}
             send_allowed = (
                 verification.get("verified")
-                and tier_rank.get(confidence["tier"], 0) >= tier_rank.get(min_tier, 2)
+                and tier_rank.get(confidence["tier"], -1) >= tier_rank.get(min_tier, 2)
             )
 
-            if not send_allowed:
+            if confidence["tier"] == "none":
+                p.status = "excluded_generic_address"
+                p.email_note = "generic role address — hard-excluded from cold outreach targeting"
+                db.add(p)
+                db.commit()
+                _log(f"excluded — follow-up to {p.email} [generic role address, never queued]")
+                continue
+            elif not send_allowed:
                 p.status = "verification_failed"
                 p.email_note = f"verification gate refused follow-up: {verification.get('reason')} (confidence={confidence['tier']})"
                 db.add(p)
