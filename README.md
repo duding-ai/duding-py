@@ -146,6 +146,167 @@ with the same pattern as the Brand Deals gate:
 |---|---|---|---|
 | `OUTREACH_SENDING_ENABLED` | For cold-outreach sending to run at all | `false` | Must be exactly `true` — hard floor, independent of the dashboard pause toggle |
 
+## Contact Discovery Rebuild (2026-07-21/22)
+
+Root-cause investigation + fix for the 22.6% outreach bounce rate and the 49%
+no-contact-found rate, ordered by the same evidence standard as everything else in this
+doc — every claim below is production data, a log line, or a commit hash, not an assumption.
+
+### Bounce autopsy
+
+Pulled all 140 bounced Resend records for duding.ai and cross-referenced each against its
+`OutreachProspect` row. 6 were unrelated internal/test sends (CHKD waitlist tests, a
+`test@example.com` welcome email, `duding@duding.ai` self-sends) — not outreach bounces at
+all. Of the remaining **134 real outreach bounces**:
+
+| Category | Count | % |
+|---|---|---|
+| Scraped generic role address (info@/support@/etc., actually found on the target site) | 128 | 95.5% |
+| Scraped named-person address (still bounced) | 6 | 4.5% |
+| Guessed/constructed address | **0** | 0% |
+| Abstract API error/quota | **0** — no such integration exists in this codebase | 0% |
+
+**The single biggest category, and really the whole story: 134/134 (100%) passed the only
+check that existed — an MX-record lookup**, which proves a domain has *some* mail server,
+not that *this specific mailbox* exists. The pipeline has never guessed/fabricated an
+address (confirmed both by the `email_note` field on every bounce and by
+`_scrape_contact_email`'s own "never fabricates a fallback" design), and there has never
+been an Abstract API (or any third-party verification API) integration to swallow errors
+from — that category is structurally impossible here, not a small number, zero.
+
+Also found in the same pass: several addresses bounced 2-3 times across separate send
+events weeks apart (e.g. `info@texasqualityplumbing.com` on both 07-02 and 07-14) — the
+follow-up job had no re-check before hitting an address that already bounced. Fixed as
+part of the verification gate below.
+
+### Hard verification gate
+
+`services/email_verification.py::verify_email_deliverable()` adds the missing layer: a
+real SMTP RCPT-TO probe (connects to the domain's actual mail server, asks whether the
+specific mailbox would accept mail, disconnects before DATA — no message is ever sent).
+Fails closed on every ambiguity: no MX, connection refused, timeout, non-250 response, or
+a **catch-all domain** (detected by also probing a random nonexistent local-part at the
+same domain — if that gets accepted too, the domain accepts everything and a "pass" for
+the real address proves nothing).
+
+**Honest limitation, found via direct evidence, not assumed:** RCPT-TO verification is a
+real improvement over MX-only, but it isn't a perfect predictor. Testing 3 real bounced
+addresses from the autopsy directly: `info@texasqualityplumbing.com` correctly failed
+(`smtp_unreachable` — connection actively refused), `info@colonyac.com` correctly failed
+(`catch_all_domain`), but `support@zoomdrain.com` came back `verified=True`. Some
+receiving mail servers accept RCPT TO for any recipient and only reject later (during or
+after DATA, sometimes via content-based filtering) — a real gap no live RCPT probe closes
+without a paid deliverability API. Still a large, real improvement: the gate would have
+caught roughly 2 of the 3 categories of failure this specific bounce batch showed.
+
+Wired into both `job_send_next_queued` and `job_process_followups` — verification (and a
+fresh catch-all/reachability check) now runs before every initial send *and* every
+follow-up, closing the re-bounce gap. Same fail-closed pattern as the
+`OUTREACH_SENDING_ENABLED` kill switch: no code path turns an error or an inconclusive
+result into a pass.
+
+**Forced-failure proof** (temporary test prospect against production, cleaned up after):
+```
+[12:35:56] verification refused — Colonyac → info@texasqualityplumbing.com
+  [smtp_unreachable: [WinError 10061] No connection could be made because the target
+  machine actively refused it, confidence=low, min required=high]
+```
+Prospect status became `verification_failed`; `OutreachActivity` row count before/after
+the run: unchanged (567 -> 567) — zero send record created, confirming no fallback path.
+
+### Confidence scoring
+
+Every prospect gets a 0-100 score (source quality + verification result + pattern risk)
+and a tier — `confidence_tier`/`confidence_score`/`confidence_reasons` +
+`verification_status`/`verification_checked_at` columns on `outreach_prospects`. Verified
++ named-person = high; failed verification always caps at low regardless of source
+quality; a catch-all "pass" is treated as inconclusive, not a real pass.
+
+`OUTREACH_MIN_CONFIDENCE_TIER` (default `high`) gates which tier is allowed to send.
+Lower it by hand once the bounce rate at the current tier proves out over a real sending
+window — never auto-detected, same manual-control philosophy as every other risk dial
+this session.
+
+### Discovery upgrade
+
+`_scrape_contact_email` now tries more page patterns (added `/get-in-touch`,
+`/reach-us`, `/locations`, `/service-areas`) and, if nothing on-site yields an email,
+falls back to the business's linked Facebook page. Footers were already covered by the
+existing whole-page text scan for server-rendered HTML (JS-rendered footers are a real,
+unavoidable gap for a `requests`-based scraper). **Google Business listings are not
+covered** — there's no ToS-compliant scraping path without a paid Google Places API key,
+which isn't part of this codebase; see "Needs Tommy's Hands" if that channel is wanted.
+
+Reran against the real no-contact-found prospect backlog in production (~194 of 310
+attempted before hitting a time-boxed cutoff on this pass — real network scraping at
+~12s/prospect; see final report for the honest per-run breakdown): **2 newly found** (1
+high tier: `bugs@bugbustersusa.com`, verified + named-person; 1 low tier:
+`info@kyzarairconditioning.com`, generic + unverified) — a genuinely low ~1% yield.
+Manual inspection of a sample of the misses found several to be thin SEO/lead-gen
+landing pages with only a phone number, not real business sites with contact/about
+pages or a linked Facebook page — a real limitation of this prospect segment, not a
+scraper bug. 310 remain in `pending_review`; the backfill can be resumed to completion
+(same script, same idempotent per-row logic) whenever convenient — it isn't
+time-sensitive, and every *new* prospect found from here forward already benefits from
+the upgraded `_scrape_contact_email` automatically.
+
+| Variable | Required? | Default | Notes |
+|---|---|---|---|
+| `OUTREACH_MIN_CONFIDENCE_TIER` | No | `high` | `low`\|`medium`\|`high` — minimum tier allowed to send |
+
+### Resend domain health (duding.ai) — no sends performed for this check
+
+Pulled directly from the Resend API — domain status, and a full daily bounce/complaint
+timeline June 30 - July 21 correlated against our own send-volume log. Resend has no
+suppression-list-size endpoint; estimated it instead as the count of unique addresses
+with a `bounced` event (Resend auto-suppresses after a hard bounce): **78 unique
+addresses**, out of 140 bounce *events* — confirming the same address got hit repeatedly
+by follow-ups, consistent with the autopsy finding above.
+
+**Domain auth**: SPF (both records) verified, DKIM verified, click/open tracking
+verified and now *on* (it was off as of the previous session's diagnostic — something
+changed it between then and now, worth knowing if that was intentional). The only failed
+DNS record is inbound Receiving MX, which is unrelated to outbound sending — reply
+detection runs over a separate IMAP mailbox, not this record. **Zero complaints, ever**,
+across all 648 records pulled — a genuinely good sign; complaints damage sender
+reputation more than hard bounces do.
+
+**The bounce timeline is heavily front-loaded, not a steady ongoing problem:**
+
+| Date | Sent (ours) | Bounce % | | Date | Sent (ours) | Bounce % |
+|---|---|---|---|---|---|---|
+| 06-30 | 3 | 14.3% | | 07-13 | 50 | 20.7% |
+| 07-01 | 1 | 8.3% | | 07-14 | 50 | 19.6% |
+| **07-02** | **50** | **49.1%** | | 07-15 | 106 | 28.0% |
+| **07-03** | **50** | **66.0%** | | 07-16 | 29 | 3.3% |
+| 07-04 | 22 | 32.1% | | 07-17 | 23 | 0.0% |
+| 07-05–07-10 | 0 (gap) | — | | 07-18 | 20 | 4.8% |
+| 07-11 | 0 | 50.0%¹ | | 07-19 | 50 | 0.0% |
+| 07-12 | 50 | 16.7% | | 07-20 | 35 | 2.6% |
+| | | | | 07-21 | 28 | 3.0% |
+
+¹ 1 of 2 non-outreach sends that day.
+
+3 catastrophic days (07-02 to 07-04) account for roughly half of all 134 bounces on
+their own. Every day from 07-16 onward (excluding the 07-15 high-volume spike) sits at
+or under 5% — in range of normal cold-outreach bounce rates. This reads as an acute
+early event that's already partially self-corrected via prospect-mix variation, not a
+domain in ongoing decline — but a 22.6% *aggregate* rate over 3 weeks is still a real
+ding with major mailbox providers, who weight rolling history over weeks, not just today.
+
+**Verdict: recoverable, not written off.** SPF/DKIM intact, zero complaints, and the
+underlying cause (no mailbox-existence check before send) now has a real fix in place.
+Recommend:
+1. Keep `OUTREACH_SENDING_ENABLED=false` for a genuine rest period — **2 weeks minimum**
+   with zero cold-outreach volume — before flipping it back on, to let the acute-period
+   reputation signal age out with receiving mail servers.
+2. Resume via the warmup ramp already built (10/day -> +5/week -> cap 50) rather than
+   jumping back to full volume — this doubles as the gradual reputation-rebuild the rest
+   period is for.
+3. Do **not** stand up a fresh outreach subdomain. That's warranted for
+   complaint-driven blacklisting or an ISP block signal, and there isn't one here — every
+   bounce inspected is a hard "mailbox doesn't exist" pattern, not a spam-filter rejection.
+
 ## Needs Tommy's Hands
 
 ### 1. `partners.getchkd.app` DNS setup (~10 min, Namecheap + Resend)
@@ -194,3 +355,19 @@ has, per git history predating this session. Not touched by Content Intelligence
 now lives at the separate path `/dashboard/content-intel` specifically to avoid colliding
 with this route) or Brand Deals. Flagging since it surfaced during this session's
 verification pass, not something introduced by it.
+
+### 5. Google Business listings as a contact-discovery channel (optional)
+
+Not implemented — there's no ToS-compliant way to scrape a business's Google Business
+Profile without Google's Places API, which requires a Google Cloud project, billing
+enabled, and an API key (Places API has a per-request cost after a monthly free tier).
+If this channel is wanted, get a Places API key and set `GOOGLE_PLACES_API_KEY` on
+Railway; the lookup itself (Place Details request by business name + location) is a
+small, contained addition to `_scrape_contact_email` once the key exists. Not started
+without that credential since it's a new paid dependency, not a code decision.
+
+### 6. Outreach rest period before re-enabling
+
+Per the domain-health verdict above: recommend holding `OUTREACH_SENDING_ENABLED=false`
+for 2 weeks minimum from 2026-07-21 before flipping it (and setting
+`OUTREACH_MIN_CONFIDENCE_TIER`, already defaulted to `high`) back on.
