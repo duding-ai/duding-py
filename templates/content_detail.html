@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}{{ video.title }} — Content Intelligence{% endblock %}
+
+{% block content %}
+<section class="wrap pad outreach-page">
+
+  <header class="admin-header">
+    <div>
+      <p class="eyebrow"><a href="/dashboard/content-intel" style="color:inherit;text-decoration:none;">Content Intelligence</a> / Video</p>
+      <h1>{{ video.title }}</h1>
+      <p class="muted">
+        {% if video.platform == 'tiktok' %}<span class="status-pill" style="background:#111827;color:#fff;">tiktok</span>
+        {% else %}<span class="status-pill" style="background:#fce7f3;color:#9d174d;">instagram</span>{% endif %}
+        &nbsp;·&nbsp; Posted {{ video.posted_at.strftime('%b %d, %Y %H:%M') if video.posted_at else '—' }}
+        {% if video.series_number %}&nbsp;·&nbsp; Series #{{ video.series_number }}{% endif %}
+      </p>
+    </div>
+    <div class="admin-header-actions">
+      <a href="/dashboard/content-intel" class="btn btn-secondary">← All Videos</a>
+      <a href="/dashboard/content-intel/{{ video.id }}/add-stats" class="btn btn-secondary">Add Stats Manually</a>
+      <button class="btn btn-primary" onclick="document.getElementById('upload-panel').classList.toggle('hidden')">Upload Screenshots</button>
+    </div>
+  </header>
+
+  {# Screenshot upload panel #}
+  <div id="upload-panel" class="card hidden" style="padding:20px 24px;margin-bottom:28px;">
+    <h2 style="font-size:15px;font-weight:700;margin:0 0 8px;">Upload Stats Screenshots</h2>
+    <p class="muted-sm" style="margin:0 0 14px;">
+      Up to 8 screenshots from {{ 'TikTok Studio "Video analysis"' if video.platform == 'tiktok' else 'Instagram "Reel insights"' }}.
+      Claude reads every image and pre-fills a form you can correct before saving.
+    </p>
+    <form method="POST" action="/dashboard/content-intel/{{ video.id }}/upload-stats" enctype="multipart/form-data">
+      <input type="file" name="files" accept="image/*" multiple required style="margin-bottom:12px;">
+      <div><button type="submit" class="btn btn-primary">Extract Stats</button></div>
+    </form>
+  </div>
+
+  {% set s = video.latest_snapshot %}
+  {% if s %}
+  <div class="admin-stat-row" style="margin-bottom:28px;">
+    <article class="admin-stat-card"><p class="stat-label">Views</p><p class="stat-value">{{ "{:,}".format(s.views) if s.views is not none else '—' }}</p></article>
+    <article class="admin-stat-card"><p class="stat-label">Share rate</p><p class="stat-value">{{ (s.share_rate*100)|round(1) ~ '%' if s.share_rate is not none else '—' }}</p></article>
+    <article class="admin-stat-card"><p class="stat-label">Save rate</p><p class="stat-value">{{ (s.save_rate*100)|round(1) ~ '%' if s.save_rate is not none else '—' }}</p></article>
+    <article class="admin-stat-card"><p class="stat-label">Profile visits</p><p class="stat-value">{{ s.profile_visits if s.profile_visits is not none else '—' }}</p></article>
+    <article class="admin-stat-card"><p class="stat-label">Bio taps</p><p class="stat-value">{{ s.bio_link_taps if s.bio_link_taps is not none else '—' }}</p></article>
+    <article class="admin-stat-card"><p class="stat-label">Bio tap conv.</p><p class="stat-value">{{ (s.bio_tap_conversion*100)|round(1) ~ '%' if s.bio_tap_conversion is not none else '—' }}</p></article>
+  </div>
+
+  <div class="grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:28px;">
+    <div class="card card-body">
+      <h2 class="section-head" style="font-size:15px;font-weight:700;margin:0 0 14px;">This Video</h2>
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <tbody>
+          <tr><td class="ci-k">Skip rate</td><td class="ci-v">{{ s.skip_rate_pct ~ '%' if s.skip_rate_pct is not none else '—' }}</td></tr>
+          <tr><td class="ci-k">Retention avg</td><td class="ci-v">{{ s.retention_avg_pct ~ '%' if s.retention_avg_pct is not none else '—' }}</td></tr>
+          <tr><td class="ci-k">Watched full %</td><td class="ci-v">{{ s.watched_full_pct ~ '%' if s.watched_full_pct is not none else '—' }}</td></tr>
+          <tr><td class="ci-k">Avg watch time</td><td class="ci-v">{{ s.avg_watch_time_seconds ~ 's' if s.avg_watch_time_seconds is not none else '—' }}</td></tr>
+          <tr><td class="ci-k">Completion proxy</td><td class="ci-v">{{ (s.completion_proxy*100)|round(1) ~ '%' if s.completion_proxy is not none else '—' }}</td></tr>
+          <tr><td class="ci-k">Drop-off point</td><td class="ci-v">{{ s.drop_off_seconds ~ 's' if s.drop_off_seconds is not none else '—' }}</td></tr>
+          <tr><td class="ci-k">Views / reach</td><td class="ci-v">{{ s.views_per_reach|round(2) if s.views_per_reach is not none else '—' }}</td></tr>
+          <tr><td class="ci-k">Likes / Comments</td><td class="ci-v">{{ s.likes if s.likes is not none else '—' }} / {{ s.comments if s.comments is not none else '—' }}</td></tr>
+          <tr><td class="ci-k">Follows</td><td class="ci-v">{{ s.follows if s.follows is not none else '—' }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card card-body">
+      <h2 class="section-head" style="font-size:15px;font-weight:700;margin:0 0 14px;">vs. Account Average ({{ video.platform|title }})</h2>
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <tbody>
+          <tr>
+            <td class="ci-k">Views</td>
+            <td class="ci-v">{{ "{:,}".format(s.views) if s.views is not none else '—' }}</td>
+            <td class="ci-v" style="color:#6b7280;">avg {{ "{:,}".format(account_avg.views) if account_avg.views is not none else '—' }}</td>
+          </tr>
+          <tr>
+            <td class="ci-k">Share rate</td>
+            <td class="ci-v">{{ (s.share_rate*100)|round(1) ~ '%' if s.share_rate is not none else '—' }}</td>
+            <td class="ci-v" style="color:#6b7280;">avg {{ (account_avg.share_rate*100)|round(1) ~ '%' if account_avg.share_rate is not none else '—' }}</td>
+          </tr>
+          <tr>
+            <td class="ci-k">Skip rate</td>
+            <td class="ci-v">{{ s.skip_rate_pct ~ '%' if s.skip_rate_pct is not none else '—' }}</td>
+            <td class="ci-v" style="color:#6b7280;">avg {{ account_avg.skip_rate_pct ~ '%' if account_avg.skip_rate_pct is not none else '—' }}</td>
+          </tr>
+          <tr>
+            <td class="ci-k">Profile visit rate</td>
+            <td class="ci-v">{{ (s.profile_visit_rate*100)|round(1) ~ '%' if s.profile_visit_rate is not none else '—' }}</td>
+            <td class="ci-v" style="color:#6b7280;">avg {{ (account_avg.profile_visit_rate*100)|round(1) ~ '%' if account_avg.profile_visit_rate is not none else '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card" style="padding:40px;text-align:center;margin-bottom:28px;">
+    <p class="muted">No stats yet — upload screenshots or add stats manually above.</p>
+  </div>
+  {% endif %}
+
+  {# Video meta #}
+  <div class="card card-body" style="margin-bottom:28px;">
+    <h2 class="section-head" style="font-size:15px;font-weight:700;margin:0 0 14px;">Details</h2>
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <tbody>
+        <tr><td class="ci-k">Hook style</td><td class="ci-v" style="text-transform:capitalize;">{{ video.hook_style or '—' }}</td></tr>
+        <tr><td class="ci-k">Hook text</td><td class="ci-v">{{ video.hook_text or '—' }}</td></tr>
+        <tr><td class="ci-k">CTA type</td><td class="ci-v">{{ video.cta_type or '—' }}</td></tr>
+        <tr><td class="ci-k">Sound</td><td class="ci-v">{{ video.sound_name or '—' }}</td></tr>
+        <tr><td class="ci-k">Length</td><td class="ci-v">{{ video.length_seconds ~ 's' if video.length_seconds else '—' }}</td></tr>
+        <tr><td class="ci-k">Format tags</td><td class="ci-v">{{ video.format_tags | join(', ') if video.format_tags else '—' }}</td></tr>
+        <tr><td class="ci-k">Caption</td><td class="ci-v">{{ video.caption_text or '—' }}</td></tr>
+        <tr><td class="ci-k">Notes</td><td class="ci-v">{{ video.notes or '—' }}</td></tr>
+        {% if video.video_url %}<tr><td class="ci-k">Link</td><td class="ci-v"><a href="{{ video.video_url }}" target="_blank" rel="noopener">{{ video.video_url }}</a></td></tr>{% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Snapshot history #}
+  {% if snapshots|length > 1 %}
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div style="padding:16px 20px;border-bottom:1px solid #e5e7eb;font-weight:700;font-size:14px;">Snapshot History</div>
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <thead>
+        <tr style="background:#f9fafb;border-bottom:1px solid #e5e7eb;">
+          <th style="text-align:left;padding:10px 12px;color:#6b7280;">Captured</th>
+          <th style="text-align:right;padding:10px 8px;color:#6b7280;">Hrs since post</th>
+          <th style="text-align:right;padding:10px 8px;color:#6b7280;">Views</th>
+          <th style="text-align:right;padding:10px 8px;color:#6b7280;">Shares</th>
+          <th style="text-align:right;padding:10px 8px;color:#6b7280;">Skip %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for snap in snapshots|reverse %}
+        <tr style="border-bottom:1px solid #f3f4f6;">
+          <td style="padding:10px 12px;">{{ snap.captured_at.strftime('%b %d, %H:%M') if snap.captured_at else '—' }}</td>
+          <td style="padding:10px 8px;text-align:right;">{{ snap.hours_since_post if snap.hours_since_post is not none else '—' }}</td>
+          <td style="padding:10px 8px;text-align:right;">{{ "{:,}".format(snap.views) if snap.views is not none else '—' }}</td>
+          <td style="padding:10px 8px;text-align:right;">{{ snap.shares if snap.shares is not none else '—' }}</td>
+          <td style="padding:10px 8px;text-align:right;">{{ snap.skip_rate_pct if snap.skip_rate_pct is not none else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</section>
+
+<style>
+.hidden { display:none !important; }
+.ci-k { padding:8px 12px 8px 0; color:#6b7280; width:180px; }
+.ci-v { padding:8px 0; color:#111827; font-weight:600; }
+</style>
+{% endblock %}

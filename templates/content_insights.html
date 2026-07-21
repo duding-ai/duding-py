@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Content Insights — Duding{% endblock %}
+
+{% block content %}
+<section class="wrap pad outreach-page">
+
+  <header class="admin-header">
+    <div>
+      <p class="eyebrow"><a href="/dashboard/content-intel" style="color:inherit;text-decoration:none;">Content Intelligence</a> / Insights</p>
+      <h1>Insights</h1>
+      <p class="muted">Hook, CTA, and platform comparisons across every tracked video.</p>
+    </div>
+    <div class="admin-header-actions">
+      <a href="/dashboard/content-intel" class="btn btn-secondary">← All Videos</a>
+    </div>
+  </header>
+
+  <div class="grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:28px;">
+
+    <div class="card card-body">
+      <h2 class="section-head" style="font-size:15px;font-weight:700;margin:0 0 14px;">By Hook Style</h2>
+      {% if insights.hook_comparison %}
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <thead><tr style="border-bottom:1px solid #e5e7eb;">
+          <th style="text-align:left;padding:6px 0;color:#6b7280;">Hook</th>
+          <th style="text-align:right;padding:6px 0;color:#6b7280;">Avg skip %</th>
+          <th style="text-align:right;padding:6px 0;color:#6b7280;">Avg share %</th>
+          <th style="text-align:right;padding:6px 0;color:#6b7280;">Avg views</th>
+          <th style="text-align:right;padding:6px 0;color:#6b7280;">n</th>
+        </tr></thead>
+        <tbody>
+          {% for row in insights.hook_comparison %}
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px 0;font-weight:600;text-transform:capitalize;">{{ row.hook_style }}</td>
+            <td style="padding:8px 0;text-align:right;">{{ row.avg_skip_rate_pct ~ '%' if row.avg_skip_rate_pct is not none else '—' }}</td>
+            <td style="padding:8px 0;text-align:right;">{{ row.avg_share_rate_pct ~ '%' if row.avg_share_rate_pct is not none else '—' }}</td>
+            <td style="padding:8px 0;text-align:right;">{{ "{:,}".format(row.avg_views|int) if row.avg_views is not none else '—' }}</td>
+            <td style="padding:8px 0;text-align:right;color:#9ca3af;">{{ row.n }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="muted" style="margin:0;">Not enough data yet.</p>{% endif %}
+    </div>
+
+    <div class="card card-body">
+      <h2 class="section-head" style="font-size:15px;font-weight:700;margin:0 0 14px;">By CTA Type</h2>
+      {% if insights.cta_comparison %}
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <thead><tr style="border-bottom:1px solid #e5e7eb;">
+          <th style="text-align:left;padding:6px 0;color:#6b7280;">CTA</th>
+          <th style="text-align:right;padding:6px 0;color:#6b7280;">Avg skip %</th>
+          <th style="text-align:right;padding:6px 0;color:#6b7280;">Avg share %</th>
+          <th style="text-align:right;padding:6px 0;color:#6b7280;">Avg views</th>
+          <th style="text-align:right;padding:6px 0;color:#6b7280;">n</th>
+        </tr></thead>
+        <tbody>
+          {% for row in insights.cta_comparison %}
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:8px 0;font-weight:600;">{{ row.cta_type | replace('_', ' ') }}</td>
+            <td style="padding:8px 0;text-align:right;">{{ row.avg_skip_rate_pct ~ '%' if row.avg_skip_rate_pct is not none else '—' }}</td>
+            <td style="padding:8px 0;text-align:right;">{{ row.avg_share_rate_pct ~ '%' if row.avg_share_rate_pct is not none else '—' }}</td>
+            <td style="padding:8px 0;text-align:right;">{{ "{:,}".format(row.avg_views|int) if row.avg_views is not none else '—' }}</td>
+            <td style="padding:8px 0;text-align:right;color:#9ca3af;">{{ row.n }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="muted-sm" style="margin:12px 0 0;">Tests the "spoken link-in-bio hurts reach" hypothesis — compare skip rate for link_in_bio_spoken vs. others.</p>
+      {% else %}<p class="muted" style="margin:0;">Not enough data yet.</p>{% endif %}
+    </div>
+
+  </div>
+
+  {# Skip-rate trendline (IG) #}
+  <div class="card card-body" style="margin-bottom:28px;">
+    <h2 class="section-head" style="font-size:15px;font-weight:700;margin:0 0 14px;">Instagram Skip-Rate Trend</h2>
+    {% if insights.ig_skip_trend %}
+    <div style="display:flex;align-items:flex-end;gap:16px;height:140px;padding:0 8px;">
+      {% for row in insights.ig_skip_trend %}
+      {% set h = (row.skip_rate_pct / 100 * 120) | round(0, 'ceil') %}
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;">
+        <div style="font-size:12px;font-weight:700;color:#111827;">{{ row.skip_rate_pct }}%</div>
+        <div style="width:100%;max-width:48px;height:{{ h }}px;background:linear-gradient(180deg,#f87171,#111827);border-radius:4px 4px 0 0;"></div>
+        <div style="font-size:11px;color:#6b7280;">V{{ row.series_number or '?' }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="muted-sm" style="margin:14px 0 0;">Lower is better — % of viewers who scrolled past without watching.</p>
+    {% else %}<p class="muted" style="margin:0;">No Instagram skip-rate data yet.</p>{% endif %}
+  </div>
+
+  {# Platform comparison #}
+  <div class="card card-body" style="margin-bottom:28px;">
+    <h2 class="section-head" style="font-size:15px;font-weight:700;margin:0 0 14px;">TikTok vs. Instagram (matched by series #)</h2>
+    {% if insights.platform_comparison %}
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <thead><tr style="border-bottom:1px solid #e5e7eb;">
+        <th style="text-align:left;padding:6px 0;color:#6b7280;">Series</th>
+        <th style="text-align:right;padding:6px 0;color:#6b7280;">TikTok views</th>
+        <th style="text-align:right;padding:6px 0;color:#6b7280;">IG views</th>
+      </tr></thead>
+      <tbody>
+        {% for row in insights.platform_comparison %}
+        <tr style="border-bottom:1px solid #f3f4f6;">
+          <td style="padding:8px 0;font-weight:600;">V{{ row.series_number or '?' }}</td>
+          <td style="padding:8px 0;text-align:right;">
+            {% if row.tiktok and row.tiktok.latest_snapshot %}{{ "{:,}".format(row.tiktok.latest_snapshot.views or 0) }}{% else %}—{% endif %}
+          </td>
+          <td style="padding:8px 0;text-align:right;">
+            {% if row.instagram and row.instagram.latest_snapshot %}{{ "{:,}".format(row.instagram.latest_snapshot.views or 0) }}{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted" style="margin:0;">Tag videos with the same series # on both platforms to compare.</p>{% endif %}
+  </div>
+
+  {# Funnel #}
+  <div class="card card-body">
+    <h2 class="section-head" style="font-size:15px;font-weight:700;margin:0 0 14px;">Funnel — Views → Waitlist</h2>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div class="funnel-step"><div class="funnel-n">{{ "{:,}".format(insights.funnel.views) }}</div><div class="funnel-l">Views</div></div>
+      <div class="funnel-arrow">→</div>
+      <div class="funnel-step"><div class="funnel-n">{{ "{:,}".format(insights.funnel.profile_visits) }}</div><div class="funnel-l">Profile visits</div></div>
+      <div class="funnel-arrow">→</div>
+      <div class="funnel-step"><div class="funnel-n">{{ "{:,}".format(insights.funnel.bio_link_taps) }}</div><div class="funnel-l">Bio taps</div></div>
+      <div class="funnel-arrow">→</div>
+      <div class="funnel-step"><div class="funnel-n">{{ "{:,}".format(insights.funnel.follows) }}</div><div class="funnel-l">Follows</div></div>
+      <div class="funnel-arrow">→</div>
+      <div class="funnel-step"><div class="funnel-n">{{ "{:,}".format(insights.funnel.waitlist_signups) if insights.funnel.waitlist_signups is not none else '—' }}</div><div class="funnel-l">Waitlist signups</div></div>
+    </div>
+
+    {% if signups_by_day %}
+    <div style="margin-top:24px;">
+      <p class="muted-sm" style="margin:0 0 10px;">Waitlist signups per day (last 60d) — compare against video post dates above.</p>
+      <div style="display:flex;align-items:flex-end;gap:2px;height:60px;">
+        {% set max_n = signups_by_day | map(attribute='signups') | max %}
+        {% for row in signups_by_day %}
+        <div title="{{ row.date }}: {{ row.signups }}" style="flex:1;height:{{ (row.signups / max_n * 60) | round(0,'ceil') if max_n else 0 }}px;background:#111827;border-radius:1px 1px 0 0;min-height:1px;"></div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+</section>
+
+<style>
+.funnel-step { text-align:center; min-width:100px; }
+.funnel-n { font-size:20px; font-weight:800; color:#111827; }
+.funnel-l { font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:.05em; margin-top:2px; }
+.funnel-arrow { color:#d1d5db; font-size:18px; }
+</style>
+{% endblock %}

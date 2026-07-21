@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Content Intelligence — Duding{% endblock %}
+
+{% block content %}
+<section class="wrap pad outreach-page">
+
+  <header class="admin-header">
+    <div>
+      <p class="eyebrow"><a href="/dashboard/clients/1" style="color:inherit;text-decoration:none;">Get CHKD</a> / Content Intelligence</p>
+      <h1>Content Intelligence</h1>
+      <p class="muted">Every TikTok + Instagram video, all stats, computed engagement rates.</p>
+    </div>
+    <div class="admin-header-actions">
+      <a href="/dashboard/content-intel/insights" class="btn btn-secondary">Insights →</a>
+      <a href="/dashboard/content-intel/backfill" class="btn btn-secondary">Backfill</a>
+      <button class="btn btn-primary" onclick="document.getElementById('add-video-panel').classList.toggle('hidden')">+ Add Video</button>
+    </div>
+  </header>
+
+  {# Summary cards #}
+  <div class="admin-stat-row" style="margin-bottom:28px;">
+    <article class="admin-stat-card">
+      <p class="stat-label">Videos tracked</p>
+      <p class="stat-value">{{ total_videos }}</p>
+    </article>
+    <article class="admin-stat-card">
+      <p class="stat-label">TikTok views (all-time)</p>
+      <p class="stat-value">{{ "{:,}".format(total_views_tiktok) }}</p>
+    </article>
+    <article class="admin-stat-card">
+      <p class="stat-label">Instagram views (all-time)</p>
+      <p class="stat-value">{{ "{:,}".format(total_views_ig) }}</p>
+    </article>
+    <article class="admin-stat-card stat-hot">
+      <p class="stat-label">Best by views</p>
+      <p class="stat-value" style="font-size:15px;">{{ best_by_views.title if best_by_views else '—' }}</p>
+    </article>
+    <article class="admin-stat-card stat-hot">
+      <p class="stat-label">Best by share rate</p>
+      <p class="stat-value" style="font-size:15px;">{{ best_by_share.title if best_by_share else '—' }}</p>
+    </article>
+    <article class="admin-stat-card {% if avg_skip_trend and avg_skip_trend < 45 %}stat-hot{% endif %}">
+      <p class="stat-label">Avg skip rate (last 5)</p>
+      <p class="stat-value">{{ avg_skip_trend ~ '%' if avg_skip_trend is not none else '—' }}</p>
+    </article>
+  </div>
+
+  {# Add video form (hidden by default) #}
+  <div id="add-video-panel" class="card hidden" style="padding:20px 24px;margin-bottom:28px;">
+    <h2 style="font-size:15px;font-weight:700;margin:0 0 16px;">Add Video</h2>
+    <form method="POST" action="/dashboard/content-intel" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+      <label class="ci-field">Platform
+        <select name="platform" required>
+          <option value="tiktok">TikTok</option>
+          <option value="instagram">Instagram</option>
+        </select>
+      </label>
+      <label class="ci-field">Title *
+        <input name="title" required placeholder='V5 "..."'>
+      </label>
+      <label class="ci-field">Posted at *
+        <input name="posted_at" type="datetime-local" required>
+      </label>
+      <label class="ci-field">Series #
+        <input name="series_number" type="number" min="1">
+      </label>
+      <label class="ci-field">Length (sec)
+        <input name="length_seconds" type="number" step="0.1">
+      </label>
+      <label class="ci-field">Hook style
+        <select name="hook_style">
+          <option value="confessional">Confessional</option>
+          <option value="cryptic">Cryptic</option>
+          <option value="trend">Trend</option>
+          <option value="question">Question</option>
+          <option value="data">Data</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
+      <label class="ci-field">CTA type
+        <select name="cta_type">
+          <option value="none">None</option>
+          <option value="link_in_bio_spoken">Link in bio (spoken)</option>
+          <option value="link_in_bio_caption_only">Link in bio (caption only)</option>
+          <option value="share_prompt">Share prompt</option>
+          <option value="comment_prompt">Comment prompt</option>
+        </select>
+      </label>
+      <label class="ci-field">Sound name
+        <input name="sound_name">
+      </label>
+      <label class="ci-field">Video URL
+        <input name="video_url" type="url">
+      </label>
+      <label class="ci-field" style="grid-column:1/-1;">Hook text
+        <input name="hook_text">
+      </label>
+      <label class="ci-field" style="grid-column:1/-1;">Caption
+        <textarea name="caption_text" rows="2"></textarea>
+      </label>
+      <label class="ci-field" style="grid-column:1/-1;">Notes
+        <input name="notes">
+      </label>
+      <div style="grid-column:1/-1;display:flex;gap:12px;">
+        <button type="submit" class="btn btn-primary">Add Video</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('add-video-panel').classList.add('hidden')">Cancel</button>
+      </div>
+    </form>
+  </div>
+
+  {# Videos table #}
+  {% if videos %}
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <thead>
+        <tr style="background:#f9fafb;border-bottom:1px solid #e5e7eb;">
+          <th style="text-align:left;padding:10px 12px;color:#6b7280;font-weight:600;">#</th>
+          <th style="text-align:left;padding:10px 12px;color:#6b7280;font-weight:600;">Title</th>
+          <th style="text-align:left;padding:10px 8px;color:#6b7280;font-weight:600;">Platform</th>
+          <th style="text-align:left;padding:10px 8px;color:#6b7280;font-weight:600;">Posted</th>
+          <th style="text-align:right;padding:10px 8px;color:#6b7280;font-weight:600;">Views</th>
+          <th style="text-align:right;padding:10px 8px;color:#6b7280;font-weight:600;">Share %</th>
+          <th style="text-align:right;padding:10px 8px;color:#6b7280;font-weight:600;">Skip/Retn %</th>
+          <th style="text-align:right;padding:10px 8px;color:#6b7280;font-weight:600;">Profile visits</th>
+          <th style="text-align:right;padding:10px 8px;color:#6b7280;font-weight:600;">Bio taps</th>
+          <th style="text-align:left;padding:10px 12px;color:#6b7280;font-weight:600;">Hook</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in videos %}
+        {% set s = v.latest_snapshot %}
+        <tr style="border-bottom:1px solid #f3f4f6;cursor:pointer;" onclick="location.href='/dashboard/content-intel/{{ v.id }}'">
+          <td style="padding:12px;color:#9ca3af;">{{ v.series_number or '—' }}</td>
+          <td style="padding:12px;font-weight:700;color:#111827;">{{ v.title }}</td>
+          <td style="padding:12px 8px;">
+            {% if v.platform == 'tiktok' %}
+            <span class="status-pill" style="background:#111827;color:#fff;">tiktok</span>
+            {% else %}
+            <span class="status-pill" style="background:#fce7f3;color:#9d174d;">instagram</span>
+            {% endif %}
+          </td>
+          <td style="padding:12px 8px;color:#6b7280;white-space:nowrap;">{{ v.posted_at.strftime('%b %d') if v.posted_at else '—' }}</td>
+          <td style="padding:12px 8px;text-align:right;">{{ "{:,}".format(s.views) if s and s.views is not none else '—' }}</td>
+          <td style="padding:12px 8px;text-align:right;">{{ (s.share_rate * 100) | round(1) if s and s.share_rate is not none else '—' }}</td>
+          <td style="padding:12px 8px;text-align:right;">
+            {% if s and s.skip_rate_pct is not none %}{{ s.skip_rate_pct }}{% elif s and s.retention_avg_pct is not none %}{{ s.retention_avg_pct }}{% else %}—{% endif %}
+          </td>
+          <td style="padding:12px 8px;text-align:right;">{{ s.profile_visits if s and s.profile_visits is not none else '—' }}</td>
+          <td style="padding:12px 8px;text-align:right;">{{ s.bio_link_taps if s and s.bio_link_taps is not none else '—' }}</td>
+          <td style="padding:12px;color:#6b7280;text-transform:capitalize;">{{ v.hook_style or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card" style="padding:40px;text-align:center;">
+    <p class="muted">No videos tracked yet. Add your first video above.</p>
+  </div>
+  {% endif %}
+
+</section>
+
+<style>
+.ci-field { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600; }
+.ci-field input, .ci-field select, .ci-field textarea { padding:8px 10px; border:1px solid #e5e7eb; border-radius:6px; font-size:13px; font-family:inherit; }
+.hidden { display:none !important; }
+</style>
+{% endblock %}

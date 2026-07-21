@@ -19,6 +19,27 @@ def _api_key() -> str:
     return os.getenv("RESEND_API_KEY", "").strip()
 
 
+def _log_send_error(to_email: str, from_addr: str, subject: str, status_code: Optional[int], detail: str) -> None:
+    """Best-effort — logging a failed send must never itself raise or
+    mask the original failure. Feeds the system health monitor's
+    'Resend API errors in last 24h' check for every caller of
+    send_email/send_html_email/send_email_with_attachment."""
+    try:
+        from db import SessionLocal
+        from models.email_send_error import EmailSendError
+        db = SessionLocal()
+        try:
+            db.add(EmailSendError(
+                to_email=to_email, from_addr=from_addr, subject=subject,
+                status_code=status_code, error_detail=detail[:2000],
+            ))
+            db.commit()
+        finally:
+            db.close()
+    except Exception as exc:
+        print(f"[email] could not log send error (non-fatal): {exc}")
+
+
 def _from_addr(override: Optional[str] = None) -> str:
     if override:
         return override
@@ -69,9 +90,11 @@ def send_email(
             print(f"[email] Sent to {to_email}")
             return True
         print(f"[email] Resend error {r.status_code}: {r.text[:200]}")
+        _log_send_error(to_email, from_addr, subject, r.status_code, r.text)
         return False
     except Exception as exc:
         print(f"[email] Error sending to {to_email}: {exc}")
+        _log_send_error(to_email, from_addr, subject, None, str(exc))
         return False
 
 
@@ -104,9 +127,11 @@ def send_html_email(
             print(f"[email] HTML email sent to {to_email}")
             return True
         print(f"[email] Resend error {r.status_code}: {r.text[:200]}")
+        _log_send_error(to_email, _from_addr(), subject, r.status_code, r.text)
         return False
     except Exception as exc:
         print(f"[email] Error sending HTML email to {to_email}: {exc}")
+        _log_send_error(to_email, _from_addr(), subject, None, str(exc))
         return False
 
 
@@ -145,7 +170,9 @@ def send_email_with_attachment(
             print(f"[email] Sent (with attachment) to {to_email}")
             return True
         print(f"[email] Resend error {r.status_code}: {r.text[:200]}")
+        _log_send_error(to_email, _from_addr(), subject, r.status_code, r.text)
         return False
     except Exception as exc:
         print(f"[email] Error sending with attachment to {to_email}: {exc}")
+        _log_send_error(to_email, _from_addr(), subject, None, str(exc))
         return False

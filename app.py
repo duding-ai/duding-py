@@ -4,6 +4,7 @@ load_dotenv(override=True)
 
 import uuid
 import time
+import base64
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Set, Tuple, List
@@ -24,7 +25,7 @@ from services.email import (
     send_email_with_attachment,
 )
 
-from fastapi import FastAPI, Request, Form, BackgroundTasks, Depends, HTTPException
+from fastapi import FastAPI, Request, Form, BackgroundTasks, Depends, HTTPException, File, UploadFile
 from fastapi.responses import (
     HTMLResponse,
     RedirectResponse,
@@ -59,6 +60,17 @@ from models.chkd_ai_usage import ChkdAiUsage
 from models.client import Client
 from models.social_intelligence_report import SocialIntelligenceReport
 from models.content_piece import ContentPiece
+from models.content_video import ContentVideo
+from models.content_stats_snapshot import ContentStatsSnapshot
+from models.waitlist_attribution import WaitlistAttribution
+from models.platform_credentials import PlatformCredentials
+from models.brand_prospect import BrandProspect
+from models.brand_outreach_email import BrandOutreachEmail
+from models.brand_deal import BrandDeal
+from models.job_health import JobHealth
+from models.health_baseline import HealthBaseline
+from models.health_check_run import HealthCheckRun
+from models.email_send_error import EmailSendError
 
 from schemas import LeadCreate, LeadRead, LeadEventRead
 
@@ -82,7 +94,7 @@ app.add_middleware(
     allow_origins=["https://getchkd.app", "https://www.getchkd.app",
                    "https://dancing-elf-e111e7.netlify.app"],
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "CHKD-Client-Secret"],
+    allow_headers=["Content-Type", "CHKD-Client-Secret", "Authorization"],
     max_age=3600,
 )
 
@@ -190,6 +202,25 @@ async def _seed_clients():
             db.commit()
     finally:
         db.close()
+
+
+@app.on_event("startup")
+async def _seed_content_videos():
+    """Backfills the 5 known Get CHKD seed videos — runs after
+    Base.metadata.create_all() (line 151, executes at module import
+    time, always before any startup event fires) so content_videos
+    already exists. seed_content_videos() itself is keyed per-row on
+    (platform, series_number), so this is safe to run on every
+    restart — it never re-inserts a row that's already there."""
+    from services.content_intelligence import seed_content_videos
+    seed_content_videos()
+
+
+@app.on_event("startup")
+async def _seed_health_baselines():
+    """Idempotent per (agent, metric) — see services/health_monitor.py."""
+    from services.health_monitor import seed_health_baselines
+    seed_health_baselines()
 
 
 @app.on_event("shutdown")
@@ -652,6 +683,7 @@ _GENERIC_LOCAL = frozenset({
     "media", "pr", "marketing", "reservations", "feedback", "jobs",
     "careers", "hr", "legal", "privacy", "security", "customerservice",
     "customer", "customercare", "cs", "inquiry", "inquiries",
+    "partnerships", "partnership", "collabs", "collaborations", "press",
 })
 _OWNER_LOCAL = frozenset({
     "owner", "founder", "ceo", "president", "principal", "admin",
@@ -3056,6 +3088,99 @@ async def chkd_waitlist_join(request: Request):
 
 
 # ---------------------------------------------------------------------
+# CHKD ACCOUNT — self-service deletion (Apple guideline 5.1.1v)
+# ---------------------------------------------------------------------
+
+@app.post("/chkd/account/delete")
+async def chkd_account_delete(request: Request, db: Session = Depends(get_db)):
+    """
+    Deletes the signed-in CHKD user's Supabase auth account and all
+    associated data. Called from the app's Settings -> Delete Account
+    flow. Authenticated with the same CHKD-Client-Secret header used by
+    the other CHKD endpoints, plus the user's own Supabase session
+    token (Authorization: Bearer <access_token>) to resolve *which*
+    account to delete -- the client secret alone isn't a strong enough
+    credential on its own since it's embedded in client-side JS.
+    """
+    secret = request.headers.get("CHKD-Client-Secret", "")
+    if not CHKD_CLIENT_SECRET or secret != CHKD_CLIENT_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing session token")
+    user_token = auth_header[len("Bearer "):]
+
+    sb_key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    if not sb_key:
+        raise HTTPException(status_code=503, detail="Account deletion temporarily unavailable")
+
+    import httpx as _httpx
+
+    # Resolve the user id from their own session token -- proves the
+    # caller actually owns the account being deleted, rather than
+    # trusting a client-supplied user_id.
+    r = _httpx.get(
+        f"{_CHKD_SUPABASE_URL}/auth/v1/user",
+        headers={"apikey": sb_key, "Authorization": f"Bearer {user_token}"},
+        timeout=10,
+    )
+    if r.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    user_id = (r.json() or {}).get("id", "")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    admin_headers = {
+        "apikey": sb_key, "Authorization": f"Bearer {sb_key}",
+        "Content-Type": "application/json", "Prefer": "return=minimal",
+    }
+
+    def _sb_delete(table: str, params: dict):
+        try:
+            resp = _httpx.delete(
+                f"{_CHKD_SUPABASE_URL}/rest/v1/{table}",
+                headers=admin_headers, params=params, timeout=15,
+            )
+            if resp.status_code not in (200, 204):
+                print(f"[chkd] account delete: {table} {resp.status_code}: {resp.text[:200]}")
+        except Exception as exc:
+            print(f"[chkd] account delete: {table} error: {exc}")
+
+    # Best-effort cleanup of every table keyed to this user, most
+    # dependent rows first, before removing the profile itself.
+    _sb_delete("challenge_members", {"user_id": f"eq.{user_id}"})
+    _sb_delete("challenges", {"created_by": f"eq.{user_id}"})
+    _sb_delete("nudges", {"or": f"(from_user.eq.{user_id},to_user.eq.{user_id})"})
+    _sb_delete("friendships", {"or": f"(user_id.eq.{user_id},friend_id.eq.{user_id})"})
+    _sb_delete("days", {"user_id": f"eq.{user_id}"})
+    _sb_delete("profiles", {"id": f"eq.{user_id}"})
+
+    # Local (Duding backend) rows tied to this CHKD user.
+    try:
+        db.query(ChkdEmail).filter(ChkdEmail.user_id == user_id).delete()
+        db.query(ChkdAiUsage).filter(ChkdAiUsage.user_id == user_id).delete()
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[chkd] account delete: local db cleanup error: {exc}")
+
+    # Finally, delete the Supabase auth user itself -- irreversible.
+    r = _httpx.delete(
+        f"{_CHKD_SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+        headers=admin_headers, timeout=15,
+    )
+    if r.status_code not in (200, 204):
+        print(f"[chkd] account delete: auth user delete failed {r.status_code}: {r.text[:200]}")
+        raise HTTPException(
+            status_code=502,
+            detail="Account data was cleared but final deletion failed -- contact support.",
+        )
+
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------
 # CHKD DISCORD — invite endpoint (streak-gated)
 # ---------------------------------------------------------------------
 
@@ -3292,6 +3417,31 @@ async def client_detail(request: Request, client_id: int, db: Session = Depends(
             .limit(8)
             .all()
         )
+
+        # Content Intelligence — summary only; full UI lives at /dashboard/content-intel
+        content_videos_count = db.query(ContentVideo).filter(ContentVideo.client_id == client.id).count()
+        latest_video = (
+            db.query(ContentVideo)
+            .filter(ContentVideo.client_id == client.id)
+            .order_by(ContentVideo.posted_at.desc())
+            .first()
+        )
+        ctx["content_intel_count"] = content_videos_count
+        ctx["content_intel_latest"] = latest_video
+
+        # Brand Deals — full tab, embedded inline
+        from services.brand_deals import get_pipeline_counts
+        ctx["brand_deals_counts"] = get_pipeline_counts(db)
+        ctx["brand_deals_dns_ready"] = bool(os.getenv("BRAND_DEALS_FROM_EMAIL", "").strip())
+        ctx["brand_prospects"] = (
+            db.query(BrandProspect)
+            .filter(BrandProspect.client_id == client.id)
+            .order_by(BrandProspect.found_at.desc())
+            .limit(100)
+            .all()
+        )
+        ctx["brand_held_for_review"] = [p for p in ctx["brand_prospects"] if p.status == "held_for_review"]
+
         return templates.TemplateResponse("client_detail_internal.html", ctx)
 
     if client.type == "install":
@@ -3636,6 +3786,403 @@ async def discord_setup_endpoint(request: Request):
     from services.discord import setup_server
     result = setup_server()
     return JSONResponse(result)
+
+
+# ---------------------------------------------------------------------
+# CONTENT INTELLIGENCE — /dashboard/content-intel (Get CHKD video performance)
+# ---------------------------------------------------------------------
+
+def _content_video_or_404(db: Session, video_id: int) -> ContentVideo:
+    video = db.query(ContentVideo).filter(ContentVideo.id == video_id).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    return video
+
+
+@app.get("/dashboard/content-intel", response_class=HTMLResponse)
+async def content_index(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+
+    videos = (
+        db.query(ContentVideo)
+        .filter(ContentVideo.client_id == 1)
+        .order_by(ContentVideo.posted_at.desc())
+        .all()
+    )
+
+    total_views_tiktok = sum((v.latest_snapshot.views or 0) for v in videos if v.platform == "tiktok" and v.latest_snapshot)
+    total_views_ig = sum((v.latest_snapshot.views or 0) for v in videos if v.platform == "instagram" and v.latest_snapshot)
+
+    best_by_views = max(
+        (v for v in videos if v.latest_snapshot and v.latest_snapshot.views),
+        key=lambda v: v.latest_snapshot.views, default=None,
+    )
+    best_by_share = max(
+        (v for v in videos if v.latest_snapshot and v.latest_snapshot.share_rate),
+        key=lambda v: v.latest_snapshot.share_rate, default=None,
+    )
+
+    with_skip = sorted(
+        (v for v in videos if v.latest_snapshot and v.latest_snapshot.skip_rate_pct is not None),
+        key=lambda v: v.posted_at,
+    )
+    recent5 = with_skip[-5:]
+    avg_skip_trend = round(sum(v.latest_snapshot.skip_rate_pct for v in recent5) / len(recent5), 1) if recent5 else None
+
+    return templates.TemplateResponse("content_index.html", {
+        "request": request, "admin_name": ADMIN_NAME,
+        "videos": videos,
+        "total_videos": len(videos),
+        "total_views_tiktok": total_views_tiktok,
+        "total_views_ig": total_views_ig,
+        "best_by_views": best_by_views,
+        "best_by_share": best_by_share,
+        "avg_skip_trend": avg_skip_trend,
+    })
+
+
+@app.post("/dashboard/content-intel")
+async def content_create(
+    request: Request,
+    platform: str = Form(...),
+    title: str = Form(...),
+    posted_at: str = Form(...),
+    series_number: str = Form(""),
+    length_seconds: str = Form(""),
+    hook_text: str = Form(""),
+    hook_style: str = Form("other"),
+    cta_type: str = Form("none"),
+    sound_name: str = Form(""),
+    video_url: str = Form(""),
+    caption_text: str = Form(""),
+    notes: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+
+    try:
+        posted_dt = datetime.fromisoformat(posted_at)
+    except ValueError:
+        posted_dt = datetime.now(timezone.utc)
+    if posted_dt.tzinfo is None:
+        posted_dt = posted_dt.replace(tzinfo=timezone.utc)
+
+    video = ContentVideo(
+        client_id=1, platform=platform, title=title, posted_at=posted_dt,
+        series_number=int(series_number) if series_number.strip().isdigit() else None,
+        length_seconds=float(length_seconds) if length_seconds.strip() else None,
+        hook_text=hook_text or None, hook_style=hook_style or None,
+        cta_type=cta_type or None, sound_name=sound_name or None,
+        video_url=video_url or None, caption_text=caption_text or None,
+        notes=notes or None,
+    )
+    db.add(video)
+    db.commit()
+    db.refresh(video)
+    return RedirectResponse(f"/dashboard/content-intel/{video.id}", status_code=303)
+
+
+@app.get("/dashboard/content-intel/insights", response_class=HTMLResponse)
+async def content_insights_page(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+    from services.content_intelligence import get_insights, get_signups_by_day
+    return templates.TemplateResponse("content_insights.html", {
+        "request": request, "admin_name": ADMIN_NAME,
+        "insights": get_insights(db),
+        "signups_by_day": get_signups_by_day(db),
+    })
+
+
+@app.get("/dashboard/content-intel/backfill", response_class=HTMLResponse)
+async def content_backfill_form(request: Request, saved: int = 0):
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+    return templates.TemplateResponse("content_backfill.html", {
+        "request": request, "admin_name": ADMIN_NAME, "saved": saved,
+    })
+
+
+@app.post("/dashboard/content-intel/backfill")
+async def content_backfill_submit(
+    request: Request,
+    posted_date: str = Form(...),
+    platform: str = Form("tiktok"),
+    title: str = Form(""),
+    length_seconds: str = Form(""),
+    views: str = Form(""),
+    likes: str = Form(""),
+    comments: str = Form(""),
+    shares: str = Form(""),
+    saves: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    from services.content_intelligence import create_backfill_row
+    create_backfill_row(db, {
+        "posted_date": posted_date, "platform": platform, "title": title,
+        "length_seconds": length_seconds, "views": views, "likes": likes,
+        "comments": comments, "shares": shares, "saves": saves,
+    })
+    return RedirectResponse("/dashboard/content-intel/backfill?saved=1", status_code=303)
+
+
+@app.post("/dashboard/content-intel/backfill/csv")
+async def content_backfill_csv(request: Request, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    from services.content_intelligence import parse_backfill_csv, create_backfill_row
+    raw = await file.read()
+    rows = parse_backfill_csv(raw)
+    created = 0
+    for row in rows:
+        try:
+            create_backfill_row(db, row)
+            created += 1
+        except Exception as exc:
+            print(f"[content_intel] backfill CSV row failed: {exc}")
+    return RedirectResponse(f"/dashboard/content-intel/backfill?saved={created}", status_code=303)
+
+
+@app.get("/dashboard/content-intel/backfill/template.csv")
+async def content_backfill_template(request: Request):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    from services.content_intelligence import backfill_csv_template
+    csv_text = backfill_csv_template()
+    return StreamingResponse(
+        iter([csv_text]), media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=chkd_content_backfill_template.csv"},
+    )
+
+
+@app.get("/dashboard/content-intel/{video_id}", response_class=HTMLResponse)
+async def content_detail(request: Request, video_id: int, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+    video = _content_video_or_404(db, video_id)
+
+    peers = (
+        db.query(ContentVideo)
+        .filter(
+            ContentVideo.client_id == video.client_id,
+            ContentVideo.platform == video.platform,
+            ContentVideo.id != video.id,
+        )
+        .all()
+    )
+    peer_snaps = [p.latest_snapshot for p in peers if p.latest_snapshot]
+
+    def _avg(attr):
+        vals = [getattr(s, attr) for s in peer_snaps if getattr(s, attr) is not None]
+        return round(sum(vals) / len(vals), 4) if vals else None
+
+    account_avg = {
+        "views": _avg("views"), "share_rate": _avg("share_rate"),
+        "skip_rate_pct": _avg("skip_rate_pct"), "profile_visit_rate": _avg("profile_visit_rate"),
+    }
+
+    return templates.TemplateResponse("content_detail.html", {
+        "request": request, "admin_name": ADMIN_NAME,
+        "video": video, "snapshots": list(video.snapshots), "account_avg": account_avg,
+    })
+
+
+@app.get("/dashboard/content-intel/{video_id}/add-stats", response_class=HTMLResponse)
+async def content_add_stats_form(request: Request, video_id: int, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+    video = _content_video_or_404(db, video_id)
+    return templates.TemplateResponse("content_stats_form.html", {
+        "request": request, "admin_name": ADMIN_NAME, "video": video, "mode": "manual", "parsed": None,
+    })
+
+
+@app.post("/dashboard/content-intel/{video_id}/add-stats")
+async def content_add_stats_submit(request: Request, video_id: int, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    video = _content_video_or_404(db, video_id)
+    form = await request.form()
+    from services.content_intelligence import _SNAPSHOT_FIELDS, save_snapshot
+    import json as _json
+
+    values: dict = {}
+    for field in _SNAPSHOT_FIELDS:
+        raw = str(form.get(field) or "").strip()
+        if not raw:
+            continue
+        if field in ("traffic_sources", "audience"):
+            try:
+                values[field] = _json.loads(raw)
+            except Exception:
+                continue
+        else:
+            try:
+                values[field] = float(raw) if "." in raw else int(raw)
+            except ValueError:
+                continue
+
+    save_snapshot(db, video, values)
+    return RedirectResponse(f"/dashboard/content-intel/{video_id}", status_code=303)
+
+
+@app.post("/dashboard/content-intel/{video_id}/upload-stats", response_class=HTMLResponse)
+async def content_upload_stats(
+    request: Request, video_id: int,
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    video = _content_video_or_404(db, video_id)
+
+    from services.content_intelligence import parse_stat_screenshots
+
+    # parse_stat_screenshots() already catches its own Anthropic/JSON
+    # errors and returns {"_error": ...} instead of raising — but a
+    # corrupt/oversized upload can fail before we even get there (file
+    # read, base64 encode), so this outer try/except is the backstop:
+    # whatever goes wrong, the user lands on the manual-entry form
+    # with a friendly message, never a 500.
+    try:
+        images = []
+        for f in files[:8]:
+            raw = await f.read()
+            media_type = f.content_type if f.content_type in ("image/png", "image/jpeg", "image/webp") else "image/png"
+            images.append({"media_type": media_type, "data": base64.b64encode(raw).decode("utf-8")})
+
+        parsed = parse_stat_screenshots(images, video.platform)
+    except Exception as exc:
+        print(f"[content_intel] upload-stats route error: {exc}")
+        parsed = {"_error": "Could not read those screenshots — try again or use manual entry below."}
+
+    return templates.TemplateResponse("content_stats_form.html", {
+        "request": request, "admin_name": ADMIN_NAME, "video": video, "mode": "confirm", "parsed": parsed,
+    })
+
+
+# ---------------------------------------------------------------------
+# BRAND DEALS — actions on the /dashboard/clients/1 "Brand Deals" tab
+# ---------------------------------------------------------------------
+
+def _brand_prospect_or_404(db: Session, prospect_id: int) -> BrandProspect:
+    prospect = db.query(BrandProspect).filter(BrandProspect.id == prospect_id).first()
+    if not prospect:
+        raise HTTPException(status_code=404, detail="Prospect not found")
+    return prospect
+
+
+@app.post("/dashboard/clients/{client_id}/brand-deals/add")
+async def brand_deal_add_prospect(
+    request: Request, client_id: int,
+    brand_name: str = Form(...),
+    website: str = Form(""),
+    industry: str = Form("other"),
+    contact_email: str = Form(""),
+    instagram_handle: str = Form(""),
+    tiktok_handle: str = Form(""),
+    notes: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    db.add(BrandProspect(
+        client_id=client_id, brand_name=brand_name, website=website or None,
+        industry=industry or "other", contact_email=contact_email or None,
+        email_type="direct" if contact_email else None,
+        instagram_handle=instagram_handle or None, tiktok_handle=tiktok_handle or None,
+        source="manual", status="new", notes=notes or None,
+    ))
+    db.commit()
+    return RedirectResponse(f"/dashboard/clients/{client_id}?tab=brand-deals", status_code=303)
+
+
+@app.post("/dashboard/clients/{client_id}/brand-deals/{prospect_id}/approve")
+async def brand_deal_approve(request: Request, client_id: int, prospect_id: int, db: Session = Depends(get_db)):
+    """Promotes a held_for_review (generic-inbox) prospect into the
+    sendable queue — the pitch sender only ever sends 'verified' rows,
+    so this manual approval is what actually authorizes the send."""
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    prospect = _brand_prospect_or_404(db, prospect_id)
+    prospect.status = "verified"
+    db.commit()
+    return RedirectResponse(f"/dashboard/clients/{client_id}?tab=brand-deals", status_code=303)
+
+
+@app.post("/dashboard/clients/{client_id}/brand-deals/{prospect_id}/reject")
+async def brand_deal_reject(request: Request, client_id: int, prospect_id: int, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    prospect = _brand_prospect_or_404(db, prospect_id)
+    prospect.status = "rejected"
+    db.commit()
+    return RedirectResponse(f"/dashboard/clients/{client_id}?tab=brand-deals", status_code=303)
+
+
+@app.post("/dashboard/clients/{client_id}/brand-deals/{prospect_id}/mark-replied")
+async def brand_deal_mark_replied(request: Request, client_id: int, prospect_id: int, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    prospect = _brand_prospect_or_404(db, prospect_id)
+    prospect.status = "replied"
+    db.commit()
+    return RedirectResponse(f"/dashboard/clients/{client_id}?tab=brand-deals", status_code=303)
+
+
+@app.post("/dashboard/clients/{client_id}/brand-deals/{prospect_id}/mark-negotiating")
+async def brand_deal_mark_negotiating(request: Request, client_id: int, prospect_id: int, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    prospect = _brand_prospect_or_404(db, prospect_id)
+    prospect.status = "negotiating"
+    db.commit()
+    return RedirectResponse(f"/dashboard/clients/{client_id}?tab=brand-deals", status_code=303)
+
+
+@app.post("/dashboard/clients/{client_id}/brand-deals/{prospect_id}/deal-won")
+async def brand_deal_mark_won(
+    request: Request, client_id: int, prospect_id: int,
+    deal_type: str = Form("other"),
+    value_usd: str = Form(""),
+    terms: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    prospect = _brand_prospect_or_404(db, prospect_id)
+    prospect.status = "deal_won"
+    db.add(BrandDeal(
+        prospect_id=prospect.id, deal_type=deal_type,
+        value_usd=float(value_usd) if value_usd.strip() else None,
+        status="active", terms=terms or None,
+    ))
+    db.commit()
+    return RedirectResponse(f"/dashboard/clients/{client_id}?tab=brand-deals", status_code=303)
+
+
+@app.post("/dashboard/clients/{client_id}/brand-deals/{prospect_id}/deal-lost")
+async def brand_deal_mark_lost(request: Request, client_id: int, prospect_id: int, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    prospect = _brand_prospect_or_404(db, prospect_id)
+    prospect.status = "deal_lost"
+    db.commit()
+    return RedirectResponse(f"/dashboard/clients/{client_id}?tab=brand-deals", status_code=303)
+
+
+@app.post("/dashboard/clients/{client_id}/brand-deals/prospector/run")
+async def brand_deal_run_prospector(request: Request, client_id: int, background_tasks: BackgroundTasks):
+    """Manual 'run now' trigger — mirrors the social-intelligence / content-gen run buttons."""
+    if not request.session.get("user_id"):
+        raise HTTPException(status_code=403)
+    from services.brand_deals import run_prospector
+    background_tasks.add_task(run_prospector)
+    return RedirectResponse(f"/dashboard/clients/{client_id}?tab=brand-deals&running=1", status_code=303)
 
 
 # ---------------------------------------------------------------------

@@ -69,6 +69,18 @@
       <span style="background:#111827;color:#fff;font-size:10px;padding:2px 6px;border-radius:10px;margin-left:4px;">{{ content_pieces | length }}</span>
       {% endif %}
     </button>
+    <button class="tab-btn" onclick="switchTab('content-intel', this)">
+      Content Intelligence
+      {% if content_intel_count %}
+      <span style="background:#111827;color:#fff;font-size:10px;padding:2px 6px;border-radius:10px;margin-left:4px;">{{ content_intel_count }}</span>
+      {% endif %}
+    </button>
+    <button class="tab-btn" onclick="switchTab('brand-deals', this)">
+      Brand Deals
+      {% if brand_held_for_review %}
+      <span style="background:#f59e0b;color:#fff;font-size:10px;padding:2px 6px;border-radius:10px;margin-left:4px;">{{ brand_held_for_review | length }}</span>
+      {% endif %}
+    </button>
   </div>
 
   {# ═══════════════════════════════════════════════════════════════════════════
@@ -471,9 +483,198 @@ CHKD_WEBHOOK_SECRET=&lt;shared secret&gt;</pre>
 
   </div>
 
+  {# ═══════════════════════════════════════════════════════════════════════════
+     TAB 4 — CONTENT INTELLIGENCE (summary + link out to /dashboard/content-intel)
+  ════════════════════════════════════════════════════════════════════════════ #}
+  <div id="tab-content-intel" class="tab-panel">
+    <div class="card" style="padding:40px;text-align:center;">
+      {% if content_intel_count %}
+      <p style="font-size:18px;font-weight:700;margin:0 0 8px;">{{ content_intel_count }} video{{ 's' if content_intel_count != 1 else '' }} tracked</p>
+      <p class="muted" style="margin:0 0 8px;">
+        Latest: {{ content_intel_latest.title if content_intel_latest else '—' }}
+        {% if content_intel_latest and content_intel_latest.posted_at %} — {{ content_intel_latest.posted_at.strftime('%b %d, %Y') }}{% endif %}
+      </p>
+      {% else %}
+      <p style="font-size:18px;font-weight:700;margin:0 0 8px;">No videos tracked yet.</p>
+      {% endif %}
+      <p class="muted-sm" style="margin:0 0 20px;">
+        Every TikTok + Instagram video, all stats, computed engagement rates, hook/CTA comparisons, and waitlist attribution.
+      </p>
+      <a href="/dashboard/content-intel" class="btn btn-primary">Open Content Intelligence →</a>
+    </div>
+  </div>
+
+  {# ═══════════════════════════════════════════════════════════════════════════
+     TAB 5 — BRAND DEALS
+  ════════════════════════════════════════════════════════════════════════════ #}
+  <div id="tab-brand-deals" class="tab-panel">
+
+    {% if not brand_deals_dns_ready %}
+    <div class="card" style="padding:16px 20px;margin-bottom:20px;border-color:#fbbf24;background:#fffbeb;">
+      <p style="margin:0;color:#92400e;font-size:13px;font-weight:700;">⚠ DNS setup required</p>
+      <p style="margin:6px 0 0;color:#92400e;font-size:12px;">
+        <code>BRAND_DEALS_FROM_EMAIL</code> isn't set on Railway — the prospector still runs and queues verified
+        prospects, but nothing sends until a dedicated sending subdomain (e.g. partners.getchkd.app) is verified
+        in Resend and that env var is set. See the README "Needs Tommy's Hands" section.
+      </p>
+    </div>
+    {% endif %}
+
+    <div class="admin-stat-row" style="margin-bottom:24px;">
+      <article class="admin-stat-card"><p class="stat-label">New</p><p class="stat-value">{{ brand_deals_counts.get('new', 0) }}</p></article>
+      <article class="admin-stat-card"><p class="stat-label">Verified / Queued</p><p class="stat-value">{{ brand_deals_counts.get('verified', 0) + brand_deals_counts.get('queued', 0) }}</p></article>
+      <article class="admin-stat-card"><p class="stat-label">Sent</p><p class="stat-value">{{ brand_deals_counts.get('sent', 0) }}</p></article>
+      <article class="admin-stat-card {% if brand_deals_counts.get('held_for_review', 0) > 0 %}stat-cold{% endif %}"><p class="stat-label">Held for review</p><p class="stat-value">{{ brand_deals_counts.get('held_for_review', 0) }}</p></article>
+      <article class="admin-stat-card stat-hot"><p class="stat-label">Replied</p><p class="stat-value">{{ brand_deals_counts.get('replied', 0) }}</p></article>
+      <article class="admin-stat-card stat-hot"><p class="stat-label">Deals won</p><p class="stat-value">{{ brand_deals_counts.get('deal_won', 0) }}</p></article>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <button class="btn btn-secondary" onclick="document.getElementById('add-brand-panel').classList.toggle('hidden')">+ Add Prospect</button>
+      <form method="POST" action="/dashboard/clients/{{ client.id }}/brand-deals/prospector/run">
+        <button type="submit" class="btn btn-primary">▶ Run Prospector Now</button>
+      </form>
+    </div>
+
+    <div id="add-brand-panel" class="card hidden" style="padding:20px 24px;margin-bottom:24px;">
+      <h2 style="font-size:15px;font-weight:700;margin:0 0 16px;">Add Brand Prospect</h2>
+      <form method="POST" action="/dashboard/clients/{{ client.id }}/brand-deals/add" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
+        <label class="bd-field">Brand name *<input name="brand_name" required></label>
+        <label class="bd-field">Website<input name="website" type="url" placeholder="https://"></label>
+        <label class="bd-field">Industry
+          <select name="industry">
+            <option value="supplements">Supplements</option>
+            <option value="fitness_apparel">Fitness apparel</option>
+            <option value="grooming">Grooming</option>
+            <option value="faith">Faith</option>
+            <option value="productivity">Productivity</option>
+            <option value="food">Food</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label class="bd-field">Contact email<input name="contact_email" type="email"></label>
+        <label class="bd-field">Instagram handle<input name="instagram_handle"></label>
+        <label class="bd-field">TikTok handle<input name="tiktok_handle"></label>
+        <label class="bd-field" style="grid-column:1/-1;">Notes<input name="notes"></label>
+        <div style="grid-column:1/-1;display:flex;gap:12px;">
+          <button type="submit" class="btn btn-primary">Add Prospect</button>
+          <button type="button" class="btn btn-ghost" onclick="document.getElementById('add-brand-panel').classList.add('hidden')">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    {% if brand_held_for_review %}
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:24px;">
+      <div style="padding:14px 20px;border-bottom:1px solid #e5e7eb;font-weight:700;font-size:14px;">
+        Held for Review <span style="color:#92400e;font-weight:500;font-size:12px;">— generic inbox, needs your OK before it sends</span>
+      </div>
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <tbody>
+          {% for p in brand_held_for_review %}
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:12px 20px;font-weight:700;">{{ p.brand_name }}</td>
+            <td style="padding:12px 8px;color:#6b7280;">{{ p.contact_email or '—' }}</td>
+            <td style="padding:12px 8px;color:#6b7280;">{{ p.notes or '' }}</td>
+            <td style="padding:12px 20px;text-align:right;white-space:nowrap;">
+              <form method="POST" action="/dashboard/clients/{{ client.id }}/brand-deals/{{ p.id }}/approve" style="display:inline;">
+                <button type="submit" class="btn btn-secondary" style="font-size:12px;padding:5px 12px;">Approve</button>
+              </form>
+              <form method="POST" action="/dashboard/clients/{{ client.id }}/brand-deals/{{ p.id }}/reject" style="display:inline;">
+                <button type="submit" class="btn btn-ghost" style="font-size:12px;padding:5px 12px;">Reject</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if brand_prospects %}
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <thead>
+          <tr style="background:#f9fafb;border-bottom:1px solid #e5e7eb;">
+            <th style="text-align:left;padding:10px 16px;color:#6b7280;font-weight:600;">Brand</th>
+            <th style="text-align:left;padding:10px 8px;color:#6b7280;font-weight:600;">Industry</th>
+            <th style="text-align:left;padding:10px 8px;color:#6b7280;font-weight:600;">Status</th>
+            <th style="text-align:left;padding:10px 8px;color:#6b7280;font-weight:600;">Contact</th>
+            <th style="text-align:left;padding:10px 8px;color:#6b7280;font-weight:600;">Found</th>
+            <th style="padding:10px 16px;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in brand_prospects %}
+          <tr style="border-bottom:1px solid #f3f4f6;">
+            <td style="padding:12px 16px;font-weight:700;">{{ p.brand_name }}{% if p.website %}<div style="font-size:11px;color:#9ca3af;font-weight:400;">{{ p.website }}</div>{% endif %}</td>
+            <td style="padding:12px 8px;color:#6b7280;text-transform:capitalize;">{{ p.industry or '—' }}</td>
+            <td style="padding:12px 8px;">
+              {% set status_colors = {
+                'new': '#f3f4f6,#374151', 'verified': '#dbeafe,#1e40af', 'queued': '#fef3c7,#92400e',
+                'sent': '#e0f2fe,#0369a1', 'held_for_review': '#fef3c7,#92400e', 'replied': '#d1fae5,#065f46',
+                'negotiating': '#f3e8ff,#7c3aed', 'deal_won': '#d1fae5,#065f46', 'deal_lost': '#f3f4f6,#6b7280',
+                'rejected': '#f3f4f6,#6b7280', 'bounced': '#fee2e2,#991b1b', 'unsubscribed': '#f3f4f6,#6b7280',
+              } %}
+              {% set sc = status_colors.get(p.status, '#f3f4f6,#374151').split(',') %}
+              <span class="status-pill" style="background:{{ sc[0] }};color:{{ sc[1] }};">{{ p.status | replace('_',' ') }}</span>
+            </td>
+            <td style="padding:12px 8px;color:#6b7280;">{{ p.contact_email or '—' }}</td>
+            <td style="padding:12px 8px;color:#6b7280;white-space:nowrap;">{{ p.found_at.strftime('%b %d') if p.found_at else '—' }}</td>
+            <td style="padding:12px 16px;text-align:right;white-space:nowrap;">
+              {% if p.status in ('sent', 'negotiating') %}
+              <form method="POST" action="/dashboard/clients/{{ client.id }}/brand-deals/{{ p.id }}/mark-replied" style="display:inline;">
+                <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:4px 10px;">Mark Replied</button>
+              </form>
+              {% endif %}
+              {% if p.status == 'replied' %}
+              <form method="POST" action="/dashboard/clients/{{ client.id }}/brand-deals/{{ p.id }}/mark-negotiating" style="display:inline;">
+                <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:4px 10px;">Negotiating</button>
+              </form>
+              {% endif %}
+              {% if p.status in ('replied', 'negotiating') %}
+              <form method="POST" action="/dashboard/clients/{{ client.id }}/brand-deals/{{ p.id }}/deal-won" style="display:inline;" onsubmit="return promptDealTerms(this);">
+                <input type="hidden" name="deal_type" value="product_seeding">
+                <input type="hidden" name="value_usd" value="">
+                <input type="hidden" name="terms" value="">
+                <button type="submit" class="btn btn-primary" style="font-size:11px;padding:4px 10px;">Deal Won</button>
+              </form>
+              <form method="POST" action="/dashboard/clients/{{ client.id }}/brand-deals/{{ p.id }}/deal-lost" style="display:inline;">
+                <button type="submit" class="btn btn-ghost" style="font-size:11px;padding:4px 10px;">Deal Lost</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card" style="padding:40px;text-align:center;">
+      <p class="muted">No brand prospects yet. Click "Run Prospector Now" or add one manually above.</p>
+    </div>
+    {% endif %}
+
+  </div>
+
 </section>
 
+<style>
+.bd-field { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600; }
+.bd-field input, .bd-field select { padding:8px 10px; border:1px solid #e5e7eb; border-radius:6px; font-size:13px; font-family:inherit; }
+</style>
+
 <script>
+function promptDealTerms(form) {
+  var dealType = prompt("Deal type (product_seeding / ugc_package / affiliate / paid_post / other):", "product_seeding");
+  if (dealType === null) return false;
+  var value = prompt("Deal value in USD (optional, leave blank if none):", "");
+  var terms = prompt("Terms / notes (optional):", "");
+  form.deal_type.value = dealType || "other";
+  form.value_usd.value = value || "";
+  form.terms.value = terms || "";
+  return true;
+}
+
 function switchTab(id, btn) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));

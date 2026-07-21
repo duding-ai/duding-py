@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Backfill — Content Intelligence{% endblock %}
+
+{% block content %}
+<section class="wrap pad outreach-page" style="max-width:720px;">
+
+  <header class="admin-header">
+    <div>
+      <p class="eyebrow"><a href="/dashboard/content-intel" style="color:inherit;text-decoration:none;">Content Intelligence</a> / Backfill</p>
+      <h1>Backfill Historical Videos</h1>
+      <p class="muted">Rapid entry for the 70+ older TikTok videos — one snapshot, no history required.</p>
+    </div>
+  </header>
+
+  {% if saved %}
+  <div class="card" style="padding:14px 20px;margin-bottom:20px;border-color:#86efac;background:#f0fdf4;">
+    <p style="margin:0;color:#166534;font-size:13px;font-weight:600;">Saved ✓ — next</p>
+  </div>
+  {% endif %}
+
+  <div class="card card-body" style="margin-bottom:24px;">
+    <h2 class="section-head" style="font-size:15px;font-weight:700;margin:0 0 14px;">Quick Entry</h2>
+    <form method="POST" action="/dashboard/content-intel/backfill" id="backfill-form">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <label class="ci-field">Posted date *<input name="posted_date" type="date" required autofocus></label>
+        <label class="ci-field">Platform
+          <select name="platform"><option value="tiktok" selected>TikTok</option><option value="instagram">Instagram</option></select>
+        </label>
+        <label class="ci-field" style="grid-column:1/-1;">Title / hook<input name="title" placeholder="Short internal name or hook text"></label>
+        <label class="ci-field">Length (sec)<input name="length_seconds" type="number" step="0.1"></label>
+        <label class="ci-field">Views<input name="views" type="number"></label>
+        <label class="ci-field">Likes<input name="likes" type="number"></label>
+        <label class="ci-field">Comments<input name="comments" type="number"></label>
+        <label class="ci-field">Shares<input name="shares" type="number"></label>
+        <label class="ci-field">Saves<input name="saves" type="number"></label>
+      </div>
+      <div style="margin-top:18px;">
+        <button type="submit" class="btn btn-primary">Save ✓ — Next</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card card-body">
+    <h2 class="section-head" style="font-size:15px;font-weight:700;margin:0 0 10px;">Or Upload a CSV</h2>
+    <p class="muted-sm" style="margin:0 0 14px;">
+      Columns: <code>{{ 'posted_date, platform, title, length_seconds, views, likes, comments, shares, saves' }}</code>
+      &nbsp;·&nbsp; <a href="/dashboard/content-intel/backfill/template.csv">Download template</a>
+    </p>
+    <form method="POST" action="/dashboard/content-intel/backfill/csv" enctype="multipart/form-data" style="display:flex;gap:12px;align-items:center;">
+      <input type="file" name="file" accept=".csv" required>
+      <button type="submit" class="btn btn-primary">Upload CSV</button>
+    </form>
+  </div>
+
+</section>
+
+<style>
+.ci-field { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600; }
+.ci-field input, .ci-field select { padding:8px 10px; border:1px solid #e5e7eb; border-radius:6px; font-size:13px; font-family:inherit; }
+</style>
+
+<script>
+// After a successful save (server redirects with ?saved=1), keep focus on
+// the date field so entry stays fast for a big backlog of videos.
+document.addEventListener('DOMContentLoaded', function() {
+  var dateInput = document.querySelector('input[name="posted_date"]');
+  if (dateInput) dateInput.focus();
+});
+</script>
+{% endblock %}

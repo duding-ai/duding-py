@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Add Stats — {{ video.title }}{% endblock %}
+
+{% block content %}
+<section class="wrap pad outreach-page" style="max-width:720px;">
+
+  <header class="admin-header">
+    <div>
+      <p class="eyebrow"><a href="/dashboard/content-intel/{{ video.id }}" style="color:inherit;text-decoration:none;">{{ video.title }}</a> / Stats</p>
+      <h1>{{ 'Confirm Extracted Stats' if mode == 'confirm' else 'Add Stats Manually' }}</h1>
+      {% if mode == 'confirm' %}
+      <p class="muted">Claude read your screenshots — check the numbers below before saving. Blank fields weren't visible.</p>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if parsed and parsed.get('_error') %}
+  <div class="card" style="padding:16px 20px;margin-bottom:20px;border-color:#fca5a5;background:#fef2f2;">
+    <p style="margin:0;color:#991b1b;font-size:13px;font-weight:600;">{{ parsed._error }}</p>
+    <p style="margin:6px 0 0;color:#991b1b;font-size:12px;">Falling back to manual entry — fill in what you can from the screenshots.</p>
+  </div>
+  {% endif %}
+
+  <div class="card card-body">
+    <form method="POST" action="/dashboard/content-intel/{{ video.id }}/add-stats">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+
+        <label class="ci-field">Views<input type="number" name="views" value="{{ parsed.views if parsed and parsed.views is not none else '' }}"></label>
+        {% if video.platform == 'instagram' %}
+        <label class="ci-field">Accounts reached<input type="number" name="accounts_reached" value="{{ parsed.accounts_reached if parsed and parsed.accounts_reached is not none else '' }}"></label>
+        {% else %}
+        <label class="ci-field">Total viewers<input type="number" name="total_viewers" value="{{ parsed.total_viewers if parsed and parsed.total_viewers is not none else '' }}"></label>
+        {% endif %}
+
+        <label class="ci-field">Likes<input type="number" name="likes" value="{{ parsed.likes if parsed and parsed.likes is not none else '' }}"></label>
+        <label class="ci-field">Comments<input type="number" name="comments" value="{{ parsed.comments if parsed and parsed.comments is not none else '' }}"></label>
+        <label class="ci-field">Shares<input type="number" name="shares" value="{{ parsed.shares if parsed and parsed.shares is not none else '' }}"></label>
+        <label class="ci-field">Reposts<input type="number" name="reposts" value="{{ parsed.reposts if parsed and parsed.reposts is not none else '' }}"></label>
+        <label class="ci-field">Saves<input type="number" name="saves" value="{{ parsed.saves if parsed and parsed.saves is not none else '' }}"></label>
+        <label class="ci-field">Profile visits<input type="number" name="profile_visits" value="{{ parsed.profile_visits if parsed and parsed.profile_visits is not none else '' }}"></label>
+        <label class="ci-field">Bio link taps<input type="number" name="bio_link_taps" value="{{ parsed.bio_link_taps if parsed and parsed.bio_link_taps is not none else '' }}"></label>
+        <label class="ci-field">Follows<input type="number" name="follows" value="{{ parsed.follows if parsed and parsed.follows is not none else '' }}"></label>
+
+        <label class="ci-field">Avg watch time (sec)<input type="number" step="0.1" name="avg_watch_time_seconds" value="{{ parsed.avg_watch_time_seconds if parsed and parsed.avg_watch_time_seconds is not none else '' }}"></label>
+        {% if video.platform == 'tiktok' %}
+        <label class="ci-field">Watched full %<input type="number" step="0.01" name="watched_full_pct" value="{{ parsed.watched_full_pct if parsed and parsed.watched_full_pct is not none else '' }}"></label>
+        {% endif %}
+        <label class="ci-field">Retention avg %<input type="number" step="0.1" name="retention_avg_pct" value="{{ parsed.retention_avg_pct if parsed and parsed.retention_avg_pct is not none else '' }}"></label>
+        {% if video.platform == 'instagram' %}
+        <label class="ci-field">Skip rate %<input type="number" step="0.1" name="skip_rate_pct" value="{{ parsed.skip_rate_pct if parsed and parsed.skip_rate_pct is not none else '' }}"></label>
+        {% endif %}
+        <label class="ci-field">Drop-off point (sec)<input type="number" step="0.1" name="drop_off_seconds" value="{{ parsed.drop_off_seconds if parsed and parsed.drop_off_seconds is not none else '' }}"></label>
+        <label class="ci-field">Total play time (sec)<input type="number" name="total_play_time_seconds" value="{{ parsed.total_play_time_seconds if parsed and parsed.total_play_time_seconds is not none else '' }}"></label>
+
+        <label class="ci-field" style="grid-column:1/-1;">Traffic sources (JSON)
+          <textarea name="traffic_sources" rows="2" placeholder='{"for_you": 78.2, "search": 2.6}'>{{ parsed.traffic_sources | tojson if parsed and parsed.traffic_sources else '' }}</textarea>
+        </label>
+        <label class="ci-field" style="grid-column:1/-1;">Audience (JSON)
+          <textarea name="audience" rows="2" placeholder='{"male_pct": 54, "non_follower_pct": 89.3}'>{{ parsed.audience | tojson if parsed and parsed.audience else '' }}</textarea>
+        </label>
+      </div>
+
+      <div style="margin-top:20px;display:flex;gap:12px;">
+        <button type="submit" class="btn btn-primary">Save Snapshot</button>
+        <a href="/dashboard/content-intel/{{ video.id }}" class="btn btn-ghost">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+</section>
+
+<style>
+.ci-field { display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600; }
+.ci-field input, .ci-field textarea { padding:8px 10px; border:1px solid #e5e7eb; border-radius:6px; font-size:13px; font-family:inherit; }
+</style>
+{% endblock %}

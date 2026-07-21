@@ -31,6 +31,7 @@ from services.email import send_email as _resend_email
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 
 from db import SessionLocal
 from models.outreach_activity import OutreachActivity
@@ -108,6 +109,36 @@ def _log(msg: str) -> None:
 
 def _send(to_email: str, subject: str, body: str, from_name: str = "Tommy") -> bool:
     return _resend_email(to_email, subject, body, from_name=from_name)
+
+
+def _job_listener(event) -> None:
+    """Scheduler-wide APScheduler listener — records last_success_at /
+    last_error_at per job_id in the job_health table. Registered once
+    against the scheduler itself (see start_engine), not per job, so
+    every job added now or later is tracked automatically without any
+    changes here or in services/health_monitor.py."""
+    from models.job_health import JobHealth
+
+    db = SessionLocal()
+    try:
+        row = db.query(JobHealth).filter(JobHealth.job_id == event.job_id).first()
+        if not row:
+            row = JobHealth(job_id=event.job_id)
+            db.add(row)
+        now = datetime.now(timezone.utc)
+        if getattr(event, "exception", None):
+            row.last_error_at = now
+            row.last_error_message = str(event.exception)[:2000]
+            row.consecutive_errors = (row.consecutive_errors or 0) + 1
+        else:
+            row.last_success_at = now
+            row.consecutive_errors = 0
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"[job_health] listener error: {exc}")
+    finally:
+        db.close()
 
 
 def _send_sms(short_msg: str) -> bool:
@@ -886,6 +917,40 @@ def job_check_replies() -> None:
         db.close()
 
 
+_STATUS_EMOJI = {"healthy": "🟢", "warning": "🟡", "critical": "🔴"}
+
+
+def _build_health_block() -> str:
+    """Leads the daily briefing — status emoji, then every flag with
+    its recommended action, problems first. Reads the run
+    job_system_health_monitor persisted ~5 min earlier; if that job
+    hasn't run yet (e.g. right after a fresh deploy), computes inline
+    rather than showing a stale or missing status."""
+    from services.health_monitor import get_latest_health_check, run_health_check
+
+    result = get_latest_health_check()
+    if not result or (datetime.now(timezone.utc) - result["run_at"].replace(tzinfo=timezone.utc)) > timedelta(hours=6):
+        try:
+            result = run_health_check(scheduler=_scheduler)
+        except Exception as exc:
+            _log(f"[health] inline fallback failed: {exc}")
+            return "SYSTEM HEALTH: unavailable this run.\n\n"
+
+    emoji = _STATUS_EMOJI.get(result["overall_status"], "🟡")
+    label = result["overall_status"].upper()
+    lines = [f"{emoji} SYSTEM HEALTH: {label}"]
+
+    if result["flags"]:
+        for f in result["flags"]:
+            sev_tag = "CRITICAL" if f["severity"] == "critical" else "WARNING"
+            lines.append(f"  [{sev_tag}] ({f['agent']}) {f['message']}")
+            lines.append(f"    → {f['action']}")
+    else:
+        lines.append("  No flags — all agents within baseline.")
+
+    return "\n".join(lines) + "\n\n"
+
+
 def job_daily_summary() -> None:
     """SECTION 3 — 8am CST daily briefing email + SMS one-liner to Tommy."""
     db = SessionLocal()
@@ -988,6 +1053,15 @@ def job_daily_summary() -> None:
             chkd_stats = {"streak7_count": 0, "at_risk_count": 0}
             chkd_new_signups, chkd_emails_today = 0, 0
 
+        try:
+            from services.brand_deals import get_briefing_summary
+            brand_deals_stats = get_briefing_summary(db)
+        except Exception as _bd_exc:
+            _log(f"[brand_deals] daily briefing stats failed: {_bd_exc}")
+            brand_deals_stats = {"new_prospects_today": 0, "sent_today": 0, "held_for_review": 0, "replied": 0}
+
+        health_block = _build_health_block()
+
         hot_text = "\n".join(
             f"  {i+1}. {p.business_name or p.email}  [{p.status}]  {p.website or ''}"
             for i, p in enumerate(hot_prospects)
@@ -1003,6 +1077,7 @@ def job_daily_summary() -> None:
         subject  = f"Duding Daily — {date_str}"
         body = (
             f"Good morning Tommy,\n\n"
+            f"{health_block}"
             f"Business summary for {date_str}:\n\n"
             f"--- OUTREACH ---\n"
             f"  Emails sent yesterday:    {sent_yday} / {DAILY_SEND_LIMIT}\n"
@@ -1016,6 +1091,11 @@ def job_daily_summary() -> None:
             f"  Active 7-day streaks:     {chkd_stats.get('streak7_count', 0)}\n"
             f"  At-risk (3+ days quiet):  {chkd_stats.get('at_risk_count', 0)}\n"
             f"  Emails sent today:        {chkd_emails_today}\n\n"
+            f"--- BRAND DEALS ---\n"
+            f"  New prospects today:      {brand_deals_stats['new_prospects_today']}\n"
+            f"  Pitches sent today:       {brand_deals_stats['sent_today']}\n"
+            f"  Held for review:          {brand_deals_stats['held_for_review']}\n"
+            f"  Replies:                  {brand_deals_stats['replied']}\n\n"
             f"--- REVENUE ---\n"
             f"  Deposits this month:      {deposits_month}\n"
             f"  Revenue to date:          ${revenue_total:,.0f}\n"
@@ -1559,6 +1639,73 @@ def job_content_generation(intel_report: dict = None, client_id_override: int = 
         _log(f"[content_gen] ERROR: {exc}")
 
 
+# ── CHKD Content Intelligence ────────────────────────────────────────────────
+
+def job_content_waitlist_sync() -> None:
+    """Nightly — pull CHKD waitlist signups from Supabase into waitlist_attribution."""
+    from services.content_intelligence import sync_waitlist_attribution
+    try:
+        n = sync_waitlist_attribution()
+        _log(f"[content_intel] waitlist attribution synced ({n} row(s))")
+    except Exception as exc:
+        _log(f"[content_intel] ERROR waitlist_sync: {exc}")
+
+
+def job_content_platform_sync() -> None:
+    """Nightly — Phase 2 official-API stat pull. No-ops until platform_credentials exist."""
+    from services.content_intelligence import sync_platform_stats
+    try:
+        n = sync_platform_stats()
+        if n:
+            _log(f"[content_intel] platform sync wrote {n} snapshot(s)")
+    except Exception as exc:
+        _log(f"[content_intel] ERROR platform_sync: {exc}")
+
+
+# ── CHKD Brand Deals Agent ───────────────────────────────────────────────────
+
+def job_brand_prospector() -> None:
+    """Every 2h, 9am-9pm ET — find + verify new brand-partnership prospects."""
+    if _state["paused"]:
+        return
+    from services.brand_deals import run_prospector
+    try:
+        counts = run_prospector()
+        _log(f"[brand_deals] prospector: {counts}")
+    except Exception as exc:
+        _log(f"[brand_deals] ERROR prospector: {exc}")
+
+
+def job_brand_pitch_sender() -> None:
+    """Hourly, 9am-6pm ET — send/follow-up brand pitches (daily cap enforced inside)."""
+    if _state["paused"]:
+        return
+    from services.brand_deals import run_pitch_sender
+    try:
+        counts = run_pitch_sender()
+        _log(f"[brand_deals] sender: {counts}")
+    except Exception as exc:
+        _log(f"[brand_deals] ERROR sender: {exc}")
+
+
+# ── System Health Monitor ────────────────────────────────────────────────────
+
+def job_system_health_monitor() -> None:
+    """Daily, 5 min before the 8am briefing — outcome-based watchdog
+    across every registered agent (outreach, brand_deals) plus a
+    scheduler-wide job-staleness + Resend-error sweep. Persists a
+    health_check_runs row that job_daily_summary reads to build its
+    status line."""
+    from services.health_monitor import run_health_check
+    try:
+        result = run_health_check(scheduler=_scheduler)
+        n_critical = sum(1 for f in result["flags"] if f["severity"] == "critical")
+        n_warning = sum(1 for f in result["flags"] if f["severity"] == "warning")
+        _log(f"[health] {result['overall_status'].upper()} — {n_critical} critical, {n_warning} warning")
+    except Exception as exc:
+        _log(f"[health] ERROR: {exc}")
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def start_engine() -> None:
@@ -1591,6 +1738,14 @@ def start_engine() -> None:
         job_check_replies, "interval", minutes=30, id="check_replies",
         next_run_time=now + timedelta(minutes=3),
         max_instances=1, misfire_grace_time=180,
+    )
+    # System Health Monitor — 7:55am CST, 5 min before the briefing so
+    # job_daily_summary can read this run's persisted verdict.
+    _scheduler.add_job(
+        job_system_health_monitor,
+        CronTrigger(hour=7, minute=55, timezone="America/Chicago"),
+        id="system_health_monitor",
+        max_instances=1, misfire_grace_time=3600,
     )
     # SECTION 3 — Daily briefing 8am CST
     _scheduler.add_job(
@@ -1668,6 +1823,39 @@ def start_engine() -> None:
         next_run_time=now + timedelta(minutes=1),
         max_instances=1, misfire_grace_time=60,
     )
+    # CHKD Content Intelligence — waitlist attribution + Phase 2 platform sync, nightly 3am UTC
+    _scheduler.add_job(
+        job_content_waitlist_sync,
+        CronTrigger(hour=3, minute=0, timezone="UTC"),
+        id="content_waitlist_sync",
+        max_instances=1, misfire_grace_time=3600,
+    )
+    _scheduler.add_job(
+        job_content_platform_sync,
+        CronTrigger(hour=3, minute=15, timezone="UTC"),
+        id="content_platform_sync",
+        max_instances=1, misfire_grace_time=3600,
+    )
+    # CHKD Brand Deals — prospector every 2h 9am-9pm ET
+    _scheduler.add_job(
+        job_brand_prospector,
+        CronTrigger(hour="9,11,13,15,17,19,21", minute=0, timezone="America/New_York"),
+        id="brand_prospector",
+        max_instances=1, misfire_grace_time=1800,
+    )
+    # CHKD Brand Deals — pitch sender hourly 9am-6pm ET
+    _scheduler.add_job(
+        job_brand_pitch_sender,
+        CronTrigger(hour="9-18", minute=30, timezone="America/New_York"),
+        id="brand_pitch_sender",
+        max_instances=1, misfire_grace_time=1800,
+    )
+
+    # Scheduler-wide listener — records last_success_at/last_error_at per
+    # job_id for the health monitor's staleness check. Attached to the
+    # scheduler itself, so it covers every job above automatically,
+    # plus any job added in the future without touching this function.
+    _scheduler.add_listener(_job_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
 
     _scheduler.start()
     _state["running"] = True
