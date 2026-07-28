@@ -4610,4 +4610,42 @@ async def instagram_oauth_callback(
 
 
 # ---------------------------------------------------------------------
+# TIKTOK OAUTH CALLBACK — stub, not functional
+#
+# TikTok's Display API developer-app application requires a real,
+# registered redirect URI before the app can even be submitted for
+# review — this route exists solely to give the filing form a live
+# URL to point at. Unlike the Instagram callback above (which follows
+# Meta's real token-exchange flow end-to-end, just untested against a
+# live token), there is no TikTok app, no client id/secret, and no
+# token-exchange logic here at all. It intentionally does nothing but
+# confirm the URL resolves. Build the real exchange once a TikTok app
+# exists and docs/api-filing-kit.md's TikTok section is filled in.
+# ---------------------------------------------------------------------
+
+@app.get("/auth/tiktok/callback")
+async def tiktok_oauth_callback_stub(
+    request: Request,
+    code: str = "",
+    error: str = "",
+    error_description: str = "",
+):
+    """Placeholder redirect target — see comment above. Session-gated
+    to match the Instagram callback's pattern, but performs no token
+    exchange; there is nothing to exchange yet."""
+    if not request.session.get("user_id"):
+        return RedirectResponse("/login", status_code=302)
+    if error:
+        return HTMLResponse(
+            f"<h1>TikTok OAuth error</h1><p>{error}: {error_description}</p>", status_code=400
+        )
+    return HTMLResponse(
+        "<h1>TikTok callback stub</h1>"
+        "<p>This route is registered only so the TikTok Display API filing form has a "
+        "valid redirect URI. No token exchange is implemented yet — "
+        f"code received: {'yes' if code else 'no'}.</p>"
+    )
+
+
+# ---------------------------------------------------------------------
 # (health route defined at top of file)
