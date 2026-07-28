@@ -182,9 +182,18 @@ _SENDING_WARMUP_STEP_DAYS = 7
 
 
 def _outreach_sending_enabled() -> bool:
-    enabled = os.getenv("OUTREACH_SENDING_ENABLED", "false").strip().lower() == "true"
-    _sync_sending_state(enabled)
-    return enabled
+    env_enabled = os.getenv("OUTREACH_SENDING_ENABLED", "false").strip().lower() == "true"
+    if env_enabled:
+        from services.self_healing import is_outreach_auto_paused
+        if is_outreach_auto_paused():
+            # Self-healing kill switch (services/self_healing.py) tripped by
+            # the rolling bounce-rate watch — a DB-backed shadow gate since
+            # the app can't flip the Railway env var on itself. Treated as
+            # "off" here without touching the ramp-tracking sync below, so
+            # a later human-cleared resume restarts the warmup correctly.
+            return False
+    _sync_sending_state(env_enabled)
+    return env_enabled
 
 
 def _min_confidence_tier() -> str:
@@ -690,11 +699,25 @@ def job_find_prospects() -> None:
 
 
 def job_send_next_queued() -> None:
-    """SECTION 1 — Scrape + email the oldest queued prospect (respects 50/day limit)."""
+    """SECTION 1 — Scrape + email the oldest queued prospect (respects 50/day limit).
+
+    Two independent ways this can be "open": the real ramp
+    (OUTREACH_SENDING_ENABLED, subject to _under_limit's warmup cap) or
+    an active bounded test batch (services/outreach_test_batch.py,
+    subject to its own target + pacing, no daily-cap/ramp logic). Both
+    still respect the bounce-rate circuit breaker
+    (services/self_healing.py) via _outreach_sending_enabled() /
+    outreach_test_batch.evaluate_gate()."""
     if _state["paused"]:
         return
-    if not _outreach_sending_enabled():
-        _log("sending disabled — job_send_next_queued refused (OUTREACH_SENDING_ENABLED is not 'true')")
+
+    from services.outreach_test_batch import evaluate_gate as _test_batch_gate_ok, record_send as _test_batch_record
+
+    real_ramp_open = _outreach_sending_enabled()
+    test_batch_open = (not real_ramp_open) and _test_batch_gate_ok()
+
+    if not real_ramp_open and not test_batch_open:
+        _log("sending disabled — job_send_next_queued refused (no open ramp or active test batch)")
         return
 
     from app import (
@@ -707,8 +730,11 @@ def job_send_next_queued() -> None:
 
     db = SessionLocal()
     try:
-        if not _under_limit(db):
-            return
+        if real_ramp_open:
+            if not _under_limit(db):
+                return
+        # else: test_batch_open — its own target/pacing gate already passed above,
+        # no daily-cap/ramp check applies to this pathway.
 
         prospect = (
             db.query(OutreachProspect)
@@ -812,6 +838,9 @@ def job_send_next_queued() -> None:
             ok = _send(to_email, subject, body, from_name="Tommy")
             _state["last_send_at"] = datetime.now(timezone.utc)
             tag = "generic" if is_generic else "direct"
+            if test_batch_open:
+                _test_batch_record()
+                tag += ", test-batch"
             _log(f"{'✓' if ok else '✗'} {biz_name} → {to_email} [{tag}, confidence={confidence['tier']}]")
         elif not to_email:
             _log(f"✋ {biz_name} — no email found [held for review]")
@@ -1856,6 +1885,19 @@ def job_brand_pitch_sender() -> None:
 
 # ── System Health Monitor ────────────────────────────────────────────────────
 
+def job_self_healing_sweep() -> None:
+    """Every 15 min — Tier 1 automated responses (services/self_healing.py):
+    outreach bounce-rate rolling-window circuit breaker + scheduled-job
+    auto-restart. Deliberately separate from job_system_health_monitor
+    (daily, detection-only) — these two failure modes are cheap to check
+    often and expensive to leave undetected for a full day."""
+    from services.self_healing import run_self_healing_sweep
+    try:
+        run_self_healing_sweep(scheduler=_scheduler)
+    except Exception as exc:
+        _log(f"[self_healing] ERROR: {exc}")
+
+
 def job_system_health_monitor() -> None:
     """Daily, 5 min before the 8am briefing — outcome-based watchdog
     across every registered agent (outreach, brand_deals) plus a
@@ -1912,6 +1954,14 @@ def start_engine() -> None:
         CronTrigger(hour=7, minute=55, timezone="America/Chicago"),
         id="system_health_monitor",
         max_instances=1, misfire_grace_time=3600,
+    )
+    # Self-Healing Sweep — Tier 1 automated responses, every 15 min.
+    # Deliberately tighter than the daily health monitor above: bounce-rate
+    # spikes and job staleness shouldn't wait until 7:55am to get acted on.
+    _scheduler.add_job(
+        job_self_healing_sweep, "interval", minutes=15, id="self_healing_sweep",
+        next_run_time=now + timedelta(minutes=1),
+        max_instances=1, misfire_grace_time=300,
     )
     # SECTION 3 — Daily briefing 8am CST
     _scheduler.add_job(

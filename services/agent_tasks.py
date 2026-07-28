@@ -57,6 +57,31 @@ def seed_reenable_task() -> int:
         db.close()
 
 
+def file_task_if_new(title: str, notes: str, criteria: List[Dict[str, Any]] = None, due_date: date = None) -> bool:
+    """Idempotent task filing for automated callers (services/self_healing.py):
+    skips if an open (pending/human_gated) task with this exact title already
+    exists, so a condition that keeps re-triggering doesn't spam duplicate
+    tasks every sweep. Returns True if a new task was actually inserted."""
+    db = SessionLocal()
+    try:
+        existing = db.query(AgentTask).filter(
+            AgentTask.title == title,
+            AgentTask.status.in_(["pending", "human_gated"]),
+        ).first()
+        if existing:
+            return False
+        db.add(AgentTask(title=title, status="human_gated", due_date=due_date, criteria=criteria, notes=notes))
+        db.commit()
+        print(f"[agent_tasks] filed: {title}")
+        return True
+    except Exception as exc:
+        db.rollback()
+        print(f"[agent_tasks] file_task_if_new error: {exc}")
+        return False
+    finally:
+        db.close()
+
+
 def _check_bounce_rate_3_days() -> Dict[str, Any]:
     key = os.getenv("RESEND_API_KEY", "").strip()
     if not key:

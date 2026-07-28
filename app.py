@@ -73,6 +73,8 @@ from models.agent_task import AgentTask
 from models.health_baseline import HealthBaseline
 from models.health_check_run import HealthCheckRun
 from models.email_send_error import EmailSendError
+from models.action_log import ActionLog
+from models.outreach_test_batch import OutreachTestBatch
 
 from schemas import LeadCreate, LeadRead, LeadEventRead
 
@@ -193,6 +195,15 @@ if not engine.url.drivername.startswith("sqlite"):
         _conn.execute(__import__("sqlalchemy").text(
             "ALTER TABLE platform_credentials ADD COLUMN IF NOT EXISTS "
             "ig_business_account_id VARCHAR"
+        ))
+        # Self-healing kill switch (services/self_healing.py)
+        _conn.execute(__import__("sqlalchemy").text(
+            "ALTER TABLE outreach_sending_state ADD COLUMN IF NOT EXISTS "
+            "auto_paused_at TIMESTAMPTZ"
+        ))
+        _conn.execute(__import__("sqlalchemy").text(
+            "ALTER TABLE outreach_sending_state ADD COLUMN IF NOT EXISTS "
+            "auto_pause_reason TEXT"
         ))
         _conn.commit()
 
@@ -2038,6 +2049,45 @@ async def engine_pause(request: Request):
     current = get_status()
     set_paused(not current["paused"])
     return JSONResponse(get_status())
+
+
+@app.post("/dashboard/outreach/engine/clear-auto-pause")
+async def engine_clear_auto_pause(request: Request):
+    """Clears the self-healing bounce-rate kill switch (services/self_healing.py).
+    Human-only by design — the sweep that trips it never calls this itself."""
+    if not require_session(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    from services.self_healing import clear_outreach_auto_pause, is_outreach_auto_paused
+    was_paused = is_outreach_auto_paused()
+    cleared = clear_outreach_auto_pause()
+    return JSONResponse({"was_auto_paused": was_paused, "cleared": cleared})
+
+
+@app.get("/dashboard/outreach/engine/test-batch")
+async def outreach_test_batch_status(request: Request):
+    if not require_session(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    from services.outreach_test_batch import status
+    return JSONResponse(status())
+
+
+@app.post("/dashboard/outreach/engine/test-batch/start")
+async def outreach_test_batch_start(request: Request, target: int = 18):
+    """Bounded, self-terminating outreach trial — independent of
+    OUTREACH_SENDING_ENABLED and the Aug 4 re-enable gate. See
+    services/outreach_test_batch.py."""
+    if not require_session(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    from services.outreach_test_batch import start_test_batch
+    return JSONResponse(start_test_batch(target))
+
+
+@app.post("/dashboard/outreach/engine/test-batch/stop")
+async def outreach_test_batch_stop(request: Request):
+    if not require_session(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    from services.outreach_test_batch import stop_test_batch
+    return JSONResponse(stop_test_batch(reason="manual_stop"))
 
 
 # ── SECTION 10 — Business overview API ───────────────────────────────────────

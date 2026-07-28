@@ -390,10 +390,13 @@ def _historical_proxy(db, job_id: str) -> Optional[datetime]:
     return None
 
 
-def check_job_staleness(db, scheduler) -> List[Dict[str, Any]]:
+def _find_stale_jobs(db, scheduler) -> List[Dict[str, Any]]:
+    """Shared detection core behind check_job_staleness (below) and the
+    self-healing job-restart watch (services/self_healing.py) — one
+    place decides what "stale" means, so the two never drift apart."""
     if not scheduler or not scheduler.running:
         return []
-    flags: List[Dict[str, Any]] = []
+    stale: List[Dict[str, Any]] = []
     now = datetime.now(timezone.utc)
     for job in scheduler.get_jobs():
         interval = _estimate_job_interval(job.trigger)
@@ -413,13 +416,21 @@ def check_job_staleness(db, scheduler) -> List[Dict[str, Any]]:
             last_success = last_success.replace(tzinfo=timezone.utc)
         gap = now - last_success
         if gap > threshold:
-            flags.append(_flag(
-                CRITICAL, "system", "job_staleness",
-                f"'{job.id}' hasn't run successfully in {gap.days}d {gap.seconds // 3600}h "
-                f"(expected within ~{threshold}, {source} signal).",
-                "Check Railway logs for this job's id — likely an unhandled exception, a removed job, or the scheduler process restarted without recovering.",
-                value=str(gap), expected=f"<{threshold}",
-            ))
+            stale.append({"job_id": job.id, "gap": gap, "threshold": threshold, "source": source})
+    return stale
+
+
+def check_job_staleness(db, scheduler) -> List[Dict[str, Any]]:
+    flags: List[Dict[str, Any]] = []
+    for item in _find_stale_jobs(db, scheduler):
+        gap, threshold = item["gap"], item["threshold"]
+        flags.append(_flag(
+            CRITICAL, "system", "job_staleness",
+            f"'{item['job_id']}' hasn't run successfully in {gap.days}d {gap.seconds // 3600}h "
+            f"(expected within ~{threshold}, {item['source']} signal).",
+            "Check Railway logs for this job's id — likely an unhandled exception, a removed job, or the scheduler process restarted without recovering.",
+            value=str(gap), expected=f"<{threshold}",
+        ))
     return flags
 
 
